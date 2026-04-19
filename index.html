@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=1440" />
+  <title>RackMap — серверная в браузере</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/styles.css" />
+</head>
+<body>
+  <!-- ================= TOP NAV ================= -->
+  <header class="topbar">
+    <div class="topbar-left">
+      <div class="logo">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="3" width="18" height="4" rx="1" stroke="#3B82F6" stroke-width="1.6"/>
+          <rect x="3" y="10" width="18" height="4" rx="1" stroke="#3B82F6" stroke-width="1.6"/>
+          <rect x="3" y="17" width="18" height="4" rx="1" stroke="#3B82F6" stroke-width="1.6"/>
+          <circle cx="7" cy="5" r="0.8" fill="#22C55E"/>
+          <circle cx="7" cy="12" r="0.8" fill="#22C55E"/>
+          <circle cx="7" cy="19" r="0.8" fill="#EAB308"/>
+        </svg>
+        <span>RackMap</span>
+      </div>
+      <nav class="tabs" id="tabs">
+        <button class="tab active" data-screen="overview">Обзор</button>
+        <button class="tab" data-screen="rack">Вид стойки</button>
+        <button class="tab" data-screen="topology">Топология</button>
+        <button class="tab" data-screen="monitoring">Мониторинг</button>
+        <button class="tab" data-screen="events">Журнал событий</button>
+      </nav>
+    </div>
+    <div class="topbar-right">
+      <div class="search">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#8B949E" stroke-width="2">
+          <circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        <input type="text" placeholder="Поиск: IP, устройство, порт…" />
+        <kbd>⌘K</kbd>
+      </div>
+      <button class="icon-btn" title="Уведомления">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+        </svg>
+        <span class="dot"></span>
+      </button>
+      <div class="avatar">AD</div>
+    </div>
+  </header>
+
+  <!-- ================= STATUS BAR ================= -->
+  <div class="statusbar">
+    <div class="status-item"><span class="muted">Всего</span><strong id="st-total">47</strong></div>
+    <span class="sep"></span>
+    <div class="status-item"><span class="dot green"></span><span class="muted">В сети</span><strong id="st-online">43</strong></div>
+    <span class="sep"></span>
+    <div class="status-item"><span class="dot yellow"></span><span class="muted">Предупреждения</span><strong id="st-warn">3</strong></div>
+    <span class="sep"></span>
+    <div class="status-item"><span class="dot red"></span><span class="muted">Критические</span><strong id="st-crit">1</strong></div>
+    <span class="sep"></span>
+    <div class="status-item mono"><span class="muted">Uptime кластера</span><strong>99.982%</strong></div>
+    <div class="spacer"></div>
+    <div class="status-item mono muted" id="clock">—</div>
+  </div>
+
+  <main id="app">
+    <!-- ================= SCREEN 1: OVERVIEW ================= -->
+    <section class="screen active" data-screen="overview">
+      <div class="screen-head">
+        <div>
+          <h1>Серверная комната · Главный ЦОД</h1>
+          <p class="muted">2D-план расположения. Наведите курсор на стойку, чтобы увидеть детали.</p>
+        </div>
+        <div class="head-actions">
+          <button class="btn ghost">Экспорт плана</button>
+          <button class="btn primary">+ Новая стойка</button>
+        </div>
+      </div>
+
+      <div class="floorplan" id="floorplan">
+        <div class="floor-grid"></div>
+        <!-- racks injected by JS -->
+      </div>
+
+      <div class="overview-foot">
+        <div class="legend">
+          <span><i class="dot green"></i>Норма</span>
+          <span><i class="dot yellow"></i>Предупреждение</span>
+          <span><i class="dot red"></i>Критично</span>
+          <span><i class="dot gray"></i>Не подключена</span>
+        </div>
+        <div class="muted mono">Масштаб: 1 клетка = 600мм · Вид сверху</div>
+      </div>
+    </section>
+
+    <!-- ================= SCREEN 2: RACK DETAIL ================= -->
+    <section class="screen" data-screen="rack">
+      <div class="screen-head compact">
+        <div class="crumbs">
+          <a href="#" data-goto="overview">Обзор</a>
+          <span>/</span>
+          <select id="rack-select" class="rack-select"></select>
+        </div>
+        <div class="head-actions">
+          <button class="btn ghost">Экспорт</button>
+          <button class="btn ghost" id="btn-add-device">+ Добавить устройство</button>
+        </div>
+      </div>
+
+      <div class="rack-layout">
+        <!-- LEFT: rack diagram -->
+        <aside class="rack-diagram-col">
+          <div class="rack-frame">
+            <div class="rack-top">
+              <span id="rack-title">Rack 01</span>
+              <span class="mono muted" id="rack-u-count">42U</span>
+            </div>
+            <div class="rack-body" id="rack-body">
+              <div class="u-ruler" id="u-ruler"></div>
+              <div class="u-slots" id="u-slots"></div>
+            </div>
+            <div class="rack-bottom">
+              <div class="rack-meta mono">
+                <span>Питание: <strong id="rack-power">—</strong></span>
+                <span>Нагрузка: <strong id="rack-load">—</strong></span>
+                <span>Темп.: <strong id="rack-temp">—</strong></span>
+              </div>
+            </div>
+          </div>
+        </aside>
+
+        <!-- CENTER: device info -->
+        <section class="device-col">
+          <div class="device-head">
+            <div>
+              <div class="device-name mono" id="d-name">—</div>
+              <div class="device-sub muted" id="d-sub">Выберите устройство в стойке</div>
+            </div>
+            <div class="device-tags" id="d-tags"></div>
+          </div>
+
+          <div class="device-tabs">
+            <button class="device-tab active" data-dtab="info">Информация</button>
+            <button class="device-tab" data-dtab="ports">Порты</button>
+            <button class="device-tab" data-dtab="notes">Примечания</button>
+          </div>
+
+          <div class="device-tab-body" data-dtab-body="info">
+            <div class="kv-grid">
+              <div><label>Имя</label><div class="v mono" id="i-name">—</div></div>
+              <div><label>Модель</label><div class="v" id="i-model">—</div></div>
+              <div><label>IP-адрес</label><div class="v mono" id="i-ip">—</div></div>
+              <div><label>MAC</label><div class="v mono" id="i-mac">—</div></div>
+              <div><label>Позиция в стойке</label><div class="v mono" id="i-pos">—</div></div>
+              <div><label>Прошивка</label><div class="v mono" id="i-fw">—</div></div>
+              <div><label>Серийный №</label><div class="v mono" id="i-sn">—</div></div>
+              <div><label>Последнее обнаружение</label><div class="v mono" id="i-seen">—</div></div>
+            </div>
+          </div>
+
+          <div class="device-tab-body hidden" data-dtab-body="ports">
+            <table class="ports-table">
+              <thead>
+                <tr>
+                  <th>Порт</th><th>Тип</th><th>IP</th><th>Подключено</th>
+                  <th>Кабель</th><th>VLAN</th><th>Статус</th><th></th>
+                </tr>
+              </thead>
+              <tbody id="ports-tbody"></tbody>
+            </table>
+          </div>
+
+          <div class="device-tab-body hidden" data-dtab-body="notes">
+            <textarea class="notes" id="i-notes" placeholder="Заметки администратора…"></textarea>
+          </div>
+        </section>
+
+        <!-- RIGHT: live stats -->
+        <aside class="stats-col">
+          <div class="stats-head">Статистика в реальном времени</div>
+
+          <div class="stat-cards">
+            <div class="stat-card">
+              <div class="stat-title">ЦП</div>
+              <div class="ring" id="ring-cpu"></div>
+              <div class="stat-foot mono"><span id="cpu-val">—</span>%</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-title">ОЗУ</div>
+              <div class="ring" id="ring-ram"></div>
+              <div class="stat-foot mono"><span id="ram-val">—</span>%</div>
+            </div>
+          </div>
+
+          <div class="stat-block">
+            <div class="stat-title">Диск</div>
+            <div class="disk-bar"><div class="disk-fill" id="disk-fill"></div></div>
+            <div class="stat-foot mono"><span id="disk-val">—</span>% · <span id="disk-used" class="muted">—</span></div>
+          </div>
+
+          <div class="stat-row">
+            <div class="stat-mini"><span class="muted">Пинг</span><strong class="mono" id="ping-val">—</strong></div>
+            <div class="stat-mini"><span class="muted">Uptime</span><strong class="mono" id="up-val">—</strong></div>
+          </div>
+
+          <div class="stat-block">
+            <div class="stat-title">Последние 60 сек</div>
+            <svg class="spark" id="spark" viewBox="0 0 200 50" preserveAspectRatio="none"></svg>
+          </div>
+        </aside>
+      </div>
+    </section>
+
+    <!-- ================= SCREEN 3: TOPOLOGY ================= -->
+    <section class="screen" data-screen="topology">
+      <div class="screen-head compact">
+        <div>
+          <h1>Сетевая топология</h1>
+          <p class="muted">Узлы и связи. Клик по узлу — изолировать соединения.</p>
+        </div>
+        <div class="topo-filters">
+          <label><input type="checkbox" checked data-filter="fiber"> <i class="swatch blue"></i> Оптоволокно</label>
+          <label><input type="checkbox" checked data-filter="utp"> <i class="swatch gray"></i> UTP</label>
+          <label><input type="checkbox" checked data-filter="cat5e"> <i class="swatch yellow"></i> Cat5e</label>
+        </div>
+      </div>
+
+      <div class="topo-wrap">
+        <div class="topo-controls">
+          <button class="icon-btn" id="topo-zoom-in">+</button>
+          <button class="icon-btn" id="topo-zoom-out">−</button>
+          <button class="icon-btn" id="topo-reset" title="Сброс">⟳</button>
+        </div>
+        <svg class="topo-canvas" id="topo" viewBox="0 0 1200 700"></svg>
+        <div class="topo-minimap">
+          <svg viewBox="0 0 1200 700" id="topo-mini"></svg>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= SCREEN 4: MONITORING ================= -->
+    <section class="screen" data-screen="monitoring">
+      <div class="screen-head compact">
+        <div>
+          <h1>Мониторинг</h1>
+          <p class="muted">Живые метрики по всем устройствам. Цвет границы — статус.</p>
+        </div>
+        <div class="head-actions">
+          <select class="select"><option>Все стойки</option><option>Rack 01</option><option>Rack 02</option></select>
+          <select class="select"><option>Все типы</option><option>Сервер</option><option>Коммутатор</option><option>Маршрутизатор</option></select>
+        </div>
+      </div>
+
+      <div class="mon-grid" id="mon-grid"></div>
+
+      <div class="alerts-block">
+        <div class="stats-head">Правила оповещений</div>
+        <table class="alerts-table">
+          <thead>
+            <tr><th>Правило</th><th>Условие</th><th>Уровень</th><th>Канал</th><th>Вкл.</th></tr>
+          </thead>
+          <tbody id="alerts-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ================= SCREEN 6: EVENTS ================= -->
+    <section class="screen" data-screen="events">
+      <div class="events-layout">
+        <aside class="events-filters">
+          <div class="f-block">
+            <h4>Стойка</h4>
+            <label><input type="checkbox" checked> Rack 01</label>
+            <label><input type="checkbox" checked> Rack 02</label>
+            <label><input type="checkbox" checked> Rack 03</label>
+            <label><input type="checkbox" checked> Rack 04</label>
+            <label><input type="checkbox" checked> Rack 05</label>
+          </div>
+          <div class="f-block">
+            <h4>Уровень</h4>
+            <label><input type="checkbox" checked> <span class="sev info">ИНФО</span></label>
+            <label><input type="checkbox" checked> <span class="sev warn">ПРЕДУПР.</span></label>
+            <label><input type="checkbox" checked> <span class="sev crit">КРИТИЧНО</span></label>
+          </div>
+          <div class="f-block">
+            <h4>Дата</h4>
+            <input type="date" class="select" />
+            <input type="date" class="select" />
+          </div>
+          <button class="btn ghost full">Экспорт CSV</button>
+        </aside>
+
+        <section class="events-main">
+          <div class="screen-head compact">
+            <div>
+              <h1>Журнал событий</h1>
+              <p class="muted">Клик по строке — развернуть детали.</p>
+            </div>
+            <div class="head-actions">
+              <div class="search small">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#8B949E" stroke-width="2"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input placeholder="Поиск…" />
+              </div>
+            </div>
+          </div>
+          <table class="events-table">
+            <thead>
+              <tr><th>Время</th><th>Ур.</th><th>Устройство</th><th>Стойка</th><th>Описание</th><th>Решено</th></tr>
+            </thead>
+            <tbody id="events-tbody"></tbody>
+          </table>
+        </section>
+      </div>
+    </section>
+  </main>
+
+  <!-- ================= PORT TOOLTIP ================= -->
+  <div class="port-tooltip" id="port-tip" hidden>
+    <div class="pt-head">
+      <span class="mono" id="pt-label">—</span>
+      <span class="pt-status" id="pt-status">—</span>
+    </div>
+    <div class="pt-row"><span class="muted">Тип</span><span class="mono" id="pt-type">—</span></div>
+    <div class="pt-row"><span class="muted">IP</span><span class="mono" id="pt-ip">—</span></div>
+    <div class="pt-row"><span class="muted">Подключено</span><span class="mono" id="pt-peer">—</span></div>
+    <div class="pt-row"><span class="muted">Кабель</span><span class="mono" id="pt-cable">—</span></div>
+    <div class="pt-row"><span class="muted">Скорость</span><span class="mono" id="pt-speed">—</span></div>
+    <div class="pt-row"><span class="muted">VLAN</span><span class="mono" id="pt-vlan">—</span></div>
+    <div class="pt-foot">
+      <button class="btn ghost small">Редактировать</button>
+    </div>
+  </div>
+
+  <!-- ================= RACK HOVER POPUP ================= -->
+  <div class="rack-pop" id="rack-pop" hidden>
+    <div class="rp-head">
+      <strong id="rp-name">—</strong>
+      <span class="status-pill" id="rp-status">—</span>
+    </div>
+    <div class="rp-row"><span class="muted">Устройств</span><span class="mono" id="rp-count">—</span></div>
+    <div class="rp-row"><span class="muted">Питание</span><span class="mono" id="rp-power">—</span></div>
+    <div class="rp-row"><span class="muted">Нагрузка</span><span class="mono" id="rp-load">—</span></div>
+    <div class="rp-row"><span class="muted">Температура</span><span class="mono" id="rp-temp">—</span></div>
+    <button class="btn primary small full" id="rp-open">Открыть стойку</button>
+  </div>
+
+  <!-- ================= MODAL: ADD/EDIT DEVICE ================= -->
+  <div class="modal-backdrop" id="modal" hidden>
+    <div class="modal">
+      <div class="modal-head">
+        <h2>Добавить / Редактировать устройство</h2>
+        <button class="icon-btn" id="modal-close">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field">
+            <label>Тип устройства</label>
+            <select class="select">
+              <option>🖥  Сервер</option>
+              <option>🔀  Коммутатор</option>
+              <option>📶  Маршрутизатор</option>
+              <option>🔌  Патч-панель</option>
+              <option>🔋  ИБП</option>
+            </select>
+          </div>
+          <div class="field"><label>Имя</label><input class="select" placeholder="srv-app-01" /></div>
+          <div class="field"><label>Модель</label><input class="select" placeholder="Dell PowerEdge R740" /></div>
+          <div class="field"><label>Серийный №</label><input class="select mono" placeholder="SN-XXXXXXXX" /></div>
+          <div class="field"><label>IP</label><input class="select mono" placeholder="10.0.0.12" /></div>
+          <div class="field"><label>MAC</label><input class="select mono" placeholder="AA:BB:CC:DD:EE:FF" /></div>
+          <div class="field"><label>Стойка</label>
+            <select class="select"><option>Rack 01</option><option>Rack 02</option><option>Rack 03</option></select>
+          </div>
+          <div class="field"><label>U-слот</label><input class="select mono" placeholder="U14-U15" /></div>
+          <div class="field"><label>Прошивка</label><input class="select mono" placeholder="2.10.3" /></div>
+          <div class="field wide"><label>Примечания</label><input class="select" placeholder="Комментарии…" /></div>
+        </div>
+
+        <div class="modal-section">
+          <div class="ms-head">
+            <h3>Порты</h3>
+            <button class="btn ghost small">+ Добавить порт</button>
+          </div>
+          <table class="ports-table editable">
+            <thead><tr><th>№</th><th>Тип</th><th>IP</th><th>Подключено</th><th>Кабель</th><th>VLAN</th><th></th></tr></thead>
+            <tbody>
+              <tr><td class="mono">1</td><td>RJ45</td><td class="mono">10.0.0.1</td><td>sw-core</td><td>UTP Cat6</td><td class="mono">10</td><td><button class="link danger">×</button></td></tr>
+              <tr><td class="mono">2</td><td>SFP+</td><td class="mono">—</td><td>—</td><td>Fiber LC</td><td class="mono">—</td><td><button class="link danger">×</button></td></tr>
+              <tr><td class="mono">3</td><td>RJ45</td><td class="mono">10.0.0.2</td><td>srv-db-02</td><td>UTP Cat6</td><td class="mono">20</td><td><button class="link danger">×</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button class="btn ghost" id="modal-cancel">Отмена</button>
+        <button class="btn primary">Сохранить</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
