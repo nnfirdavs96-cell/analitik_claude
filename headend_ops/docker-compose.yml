@@ -1,0 +1,90 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-headend}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-headend_pass}
+      POSTGRES_DB: ${POSTGRES_DB:-headend_ops}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-headend}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  app:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-headend}:${POSTGRES_PASSWORD:-headend_pass}@postgres:5432/${POSTGRES_DB:-headend_ops}
+      - DATABASE_URL_SYNC=postgresql+psycopg2://${POSTGRES_USER:-headend}:${POSTGRES_PASSWORD:-headend_pass}@postgres:5432/${POSTGRES_DB:-headend_ops}
+      - REDIS_URL=redis://redis:6379/0
+    ports:
+      - "8000:8000"
+    volumes:
+      - reports_data:/app/reports_output
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  migrate:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    env_file: .env
+    environment:
+      - DATABASE_URL_SYNC=postgresql+psycopg2://${POSTGRES_USER:-headend}:${POSTGRES_PASSWORD:-headend_pass}@postgres:5432/${POSTGRES_DB:-headend_ops}
+    command: >
+      sh -c "alembic upgrade head && python scripts/seed_data.py"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  bot:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.bot
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-headend}:${POSTGRES_PASSWORD:-headend_pass}@postgres:5432/${POSTGRES_DB:-headend_ops}
+      - DATABASE_URL_SYNC=postgresql+psycopg2://${POSTGRES_USER:-headend}:${POSTGRES_PASSWORD:-headend_pass}@postgres:5432/${POSTGRES_DB:-headend_ops}
+      - API_HOST=app
+      - REDIS_URL=redis://redis:6379/0
+    depends_on:
+      app:
+        condition: service_healthy
+    profiles:
+      - bot
+
+volumes:
+  postgres_data:
+  reports_data:

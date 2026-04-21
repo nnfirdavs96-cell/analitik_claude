@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Headend Ops — Дашборд</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: #0f1117; color: #e1e4e8; }
+        .header { background: #1f3864; padding: 16px 24px; display: flex; justify-content: space-between; align-items: center; }
+        .header h1 { font-size: 20px; color: #fff; }
+        .header .subtitle { font-size: 12px; color: #8b9dc3; }
+        .container { max-width: 1400px; margin: 0 auto; padding: 24px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .card { background: #1a1d2e; border-radius: 8px; padding: 20px; border: 1px solid #2a2d3e; }
+        .card.kpi-main { grid-column: span 2; background: linear-gradient(135deg, #1f3864 0%, #2e75b6 100%); }
+        .card h3 { font-size: 12px; color: #8b9dc3; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 8px; }
+        .card .value { font-size: 32px; font-weight: 700; color: #fff; }
+        .card .sub { font-size: 12px; color: #8b9dc3; margin-top: 4px; }
+        .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+        .badge.good { background: #1a4731; color: #4ade80; }
+        .badge.warn { background: #3d2e00; color: #fbbf24; }
+        .badge.bad { background: #3d1515; color: #f87171; }
+        .section-title { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: #e1e4e8; }
+        .table-wrap { background: #1a1d2e; border-radius: 8px; border: 1px solid #2a2d3e; overflow: hidden; }
+        table { width: 100%; border-collapse: collapse; }
+        th { background: #1f3864; color: #fff; padding: 10px 12px; font-size: 11px; text-align: left; font-weight: 600; }
+        td { padding: 10px 12px; border-bottom: 1px solid #2a2d3e; font-size: 13px; }
+        tr:last-child td { border-bottom: none; }
+        tr:hover td { background: #22253a; }
+        .sev-critical { color: #f87171; font-weight: 600; }
+        .sev-high { color: #fb923c; font-weight: 600; }
+        .sev-medium { color: #fbbf24; }
+        .sev-low { color: #4ade80; }
+        .status-resolved { color: #4ade80; }
+        .status-new { color: #60a5fa; }
+        .status-monitoring { color: #a78bfa; }
+        .status-in_progress { color: #fbbf24; }
+        .refresh-btn { background: #2e75b6; color: #fff; border: none; padding: 8px 16px; border-radius: 6px; cursor: pointer; font-size: 13px; }
+        .refresh-btn:hover { background: #3585c9; }
+        .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 24px; }
+        .loading { text-align: center; color: #8b9dc3; padding: 40px; }
+        .error { color: #f87171; padding: 20px; text-align: center; }
+        .kpi-bar { height: 8px; background: #2a2d3e; border-radius: 4px; margin-top: 8px; }
+        .kpi-bar-fill { height: 100%; border-radius: 4px; transition: width 0.5s; }
+        @media (max-width: 768px) { .grid-2 { grid-template-columns: 1fr; } .card.kpi-main { grid-column: span 1; } }
+    </style>
+</head>
+<body>
+<div class="header">
+    <div>
+        <h1>📡 Headend Ops — Оперативная панель</h1>
+        <div class="subtitle" id="last-updated">Загрузка данных...</div>
+    </div>
+    <button class="refresh-btn" onclick="loadDashboard()">↻ Обновить</button>
+</div>
+
+<div class="container">
+    <div id="dashboard-content">
+        <div class="loading">⏳ Загрузка данных...</div>
+    </div>
+</div>
+
+<script>
+const API = '/api/v1';
+
+function getScoreClass(score) {
+    if (score === null || score === undefined) return '';
+    if (score >= 75) return 'good';
+    if (score >= 50) return 'warn';
+    return 'bad';
+}
+
+function getScoreColor(score) {
+    if (score === null || score === undefined) return '#8b9dc3';
+    if (score >= 75) return '#4ade80';
+    if (score >= 50) return '#fbbf24';
+    return '#f87171';
+}
+
+function severityLabel(s) {
+    const map = { critical: 'Критическая', high: 'Высокая', medium: 'Средняя', low: 'Низкая' };
+    return map[s] || s || '—';
+}
+
+function severityClass(s) {
+    return 'sev-' + (s || 'low');
+}
+
+function statusLabel(s) {
+    const map = { resolved: 'Устранено', new: 'Новый', in_progress: 'В работе', monitoring: 'Мониторинг', closed: 'Закрыто' };
+    return map[s] || s || '—';
+}
+
+function renderKPICard(title, value, description) {
+    const cls = getScoreClass(value);
+    const color = getScoreColor(value);
+    const pct = value ? Math.min(100, value) : 0;
+    return `
+        <div class="card">
+            <h3>${title}</h3>
+            <div class="value" style="color:${color}">${value !== null && value !== undefined ? value.toFixed(1) : '—'}</div>
+            <div class="sub">${description}</div>
+            <div class="kpi-bar"><div class="kpi-bar-fill" style="width:${pct}%;background:${color}"></div></div>
+        </div>`;
+}
+
+function renderStatCard(title, value, sub) {
+    return `<div class="card"><h3>${title}</h3><div class="value">${value ?? '—'}</div><div class="sub">${sub || ''}</div></div>`;
+}
+
+function renderIncidentsTable(incidents) {
+    if (!incidents || !incidents.length) return '<div class="loading">Нет данных</div>';
+    const rows = incidents.map(e => `
+        <tr>
+            <td>${e.created_at ? e.created_at.substring(0, 16).replace('T',' ') : '—'}</td>
+            <td>${e.title || '—'}</td>
+            <td><span class="${severityClass(e.severity)}">${severityLabel(e.severity)}</span></td>
+            <td><span class="status-${e.status || 'new'}">${statusLabel(e.status)}</span></td>
+        </tr>`).join('');
+    return `<div class="table-wrap">
+        <table>
+            <thead><tr><th>Время</th><th>Заголовок</th><th>Критичность</th><th>Статус</th></tr></thead>
+            <tbody>${rows}</tbody>
+        </table></div>`;
+}
+
+async function loadDashboard() {
+    try {
+        const [summaryResp, eventsResp] = await Promise.all([
+            fetch(`${API}/dashboard/summary`),
+            fetch(`${API}/events?record_type=incident&page_size=10`)
+        ]);
+
+        if (!summaryResp.ok) throw new Error('Ошибка загрузки данных');
+        const summary = await summaryResp.json();
+        const eventsData = eventsResp.ok ? await eventsResp.json() : { items: [] };
+
+        const m = summary.monthly || {};
+        const kpi = m.department_kpi_score;
+        const unresolved = summary.unresolved_incidents || [];
+
+        document.getElementById('last-updated').textContent =
+            'Обновлено: ' + new Date().toLocaleString('ru-RU');
+
+        const html = `
+            <div class="grid" style="margin-bottom:24px">
+                <div class="card kpi-main">
+                    <h3>KPI ОТДЕЛА ЗА МЕСЯЦ</h3>
+                    <div class="value">${kpi !== null && kpi !== undefined ? kpi.toFixed(1) : '—'} <span style="font-size:16px;color:#8b9dc3">/ 100</span></div>
+                    <div class="kpi-bar" style="height:12px;margin-top:12px">
+                        <div class="kpi-bar-fill" style="width:${kpi||0}%;background:${getScoreColor(kpi)}"></div>
+                    </div>
+                </div>
+                ${renderKPICard('Оценка инцидентов', m.incident_score ?? summary.monthly?.incident_score, 'вес 40%')}
+                ${renderKPICard('Оценка устранения', m.resolution_score ?? null, 'вес 20%')}
+            </div>
+
+            <div class="grid">
+                ${renderStatCard('Инцидентов', m.total_incidents, 'за месяц')}
+                ${renderStatCard('Критических', m.critical_incidents, 'за месяц')}
+                ${renderStatCard('Устранено', m.resolved_incidents, '')}
+                ${renderStatCard('Не устранено', m.unresolved_incidents, '')}
+                ${renderStatCard('Повторных', m.repeat_incidents, '')}
+                ${renderStatCard('Работ', m.total_works, 'выполнено')}
+                ${renderStatCard('Рисков', m.total_risks, 'зафиксировано')}
+                ${renderStatCard('Ср. время (мин)', m.average_resolution_time_minutes ? m.average_resolution_time_minutes.toFixed(0) : '—', 'до устранения')}
+            </div>
+
+            <div class="grid-2">
+                <div>
+                    <div class="section-title">Последние инциденты</div>
+                    ${renderIncidentsTable(eventsData.items)}
+                </div>
+                <div>
+                    <div class="section-title">Не устранённые инциденты</div>
+                    ${renderIncidentsTable(unresolved)}
+                </div>
+            </div>`;
+
+        document.getElementById('dashboard-content').innerHTML = html;
+    } catch (err) {
+        document.getElementById('dashboard-content').innerHTML =
+            `<div class="error">❌ Ошибка загрузки данных: ${err.message}<br><br>Убедитесь, что API запущен на порту 8000.</div>`;
+    }
+}
+
+loadDashboard();
+setInterval(loadDashboard, 60000); // auto-refresh every minute
+</script>
+</body>
+</html>
