@@ -69,6 +69,7 @@ tailwind.config = {
   }
   .divider { height:1px; background:#21262d; }
   .kbd { border:1px solid #30363D; background:#0D1117; padding:0 6px; border-radius:4px; font-size:11px; color:#8B949E; }
+  /* fake gauge */
   .gauge { --v:60; --c:#22C55E;
     width:64px; height:64px; border-radius:99px;
     background: conic-gradient(var(--c) calc(var(--v)*1%), #21262d 0);
@@ -83,7 +84,9 @@ tailwind.config = {
   .cable-blue   { stroke:#3B82F6; }
   .cable-gray   { stroke:#8B949E; }
   .cable-yellow { stroke:#EAB308; }
-  .node { fill:#161B22; stroke:#30363D; stroke-width:1; }
+  .node {
+    fill:#161B22; stroke:#30363D; stroke-width:1;
+  }
   .node.selected { stroke:#3B82F6; stroke-width:2; filter: drop-shadow(0 0 8px #3B82F680); }
   .node-label { fill:#E6EDF3; font-family:Inter; font-size:11px; }
   .node-sub   { fill:#8B949E; font-family:'JetBrains Mono'; font-size:10px; }
@@ -98,7 +101,884 @@ tailwind.config = {
 </style>
 </head>
 <body class="min-w-[1440px]">
-<!-- See branch for full source; identical to local index.html -->
-<script>document.body.innerHTML='<div style="padding:40px;font-family:Inter">Loading — pull latest and open index.html locally.</div>';</script>
+
+<!-- ============ TOP NAV ============ -->
+<header class="border-b border-border bg-bg sticky top-0 z-40">
+  <div class="max-w-[1440px] mx-auto px-6 h-14 flex items-center gap-6">
+    <div class="flex items-center gap-2">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+        <rect x="3" y="3" width="18" height="4" rx="1" stroke="#3B82F6"/>
+        <rect x="3" y="10" width="18" height="4" rx="1" stroke="#3B82F6"/>
+        <rect x="3" y="17" width="18" height="4" rx="1" stroke="#3B82F6"/>
+        <circle cx="7" cy="5" r="1" fill="#22C55E"/>
+        <circle cx="7" cy="12" r="1" fill="#22C55E"/>
+        <circle cx="7" cy="19" r="1" fill="#EAB308"/>
+      </svg>
+      <span class="font-semibold tracking-tight">RackMap</span>
+      <span class="mono text-[11px] text-muted ml-1">v1.0</span>
+    </div>
+    <nav class="flex items-center gap-1 text-sm">
+      <button data-tab="overview" class="tab tab-active px-3 py-1.5 rounded-md">Обзор</button>
+      <button data-tab="rack"     class="tab px-3 py-1.5 rounded-md">Вид стойки</button>
+      <button data-tab="topology" class="tab px-3 py-1.5 rounded-md">Топология</button>
+      <button data-tab="monitor"  class="tab px-3 py-1.5 rounded-md">Мониторинг</button>
+      <button data-tab="events"   class="tab px-3 py-1.5 rounded-md">Журнал событий</button>
+    </nav>
+    <div class="ml-auto flex items-center gap-3">
+      <div class="relative">
+        <input placeholder="Поиск устройств, IP, портов…" class="field rounded-md text-sm pl-8 pr-3 py-1.5 w-72"/>
+        <svg class="absolute left-2.5 top-2 opacity-60" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/></svg>
+        <span class="kbd absolute right-2 top-1.5">⌘K</span>
+      </div>
+      <button class="relative btn rounded-md p-1.5">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 8a6 6 0 1 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10 21a2 2 0 0 0 4 0"/></svg>
+        <span class="absolute -top-1 -right-1 mono text-[10px] bg-crit text-white rounded-full w-4 h-4 grid place-items-center">4</span>
+      </button>
+      <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-cyan-400 grid place-items-center text-xs font-semibold">NF</div>
+    </div>
+  </div>
+  <!-- status strip -->
+  <div class="border-t border-border bg-card">
+    <div class="max-w-[1440px] mx-auto px-6 h-9 flex items-center gap-6 text-xs">
+      <span class="text-muted">Кластер <span class="mono text-text">DC-01 / Ташкент</span></span>
+      <span class="text-muted">·</span>
+      <span>Всего <span class="mono text-text font-semibold">47</span></span>
+      <span class="flex items-center gap-1.5"><span class="led bg-ok"></span>В сети <span class="mono">43</span></span>
+      <span class="flex items-center gap-1.5"><span class="led bg-warn"></span>Предупреждения <span class="mono">3</span></span>
+      <span class="flex items-center gap-1.5"><span class="led bg-crit"></span>Критические <span class="mono">1</span></span>
+      <span class="ml-auto text-muted">Последнее обнаружение <span class="mono text-text">14:23:07</span></span>
+    </div>
+  </div>
+</header>
+
+<main class="max-w-[1440px] mx-auto px-6 py-6">
+
+<!-- ============ SCREEN 1: OVERVIEW ============ -->
+<section data-screen="overview" class="screen">
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-xl font-semibold">Обзор серверной</h1>
+      <p class="text-sm text-muted mt-0.5">Физическая карта стоек. Наведите курсор на стойку — получите сводку.</p>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="btn rounded-md px-3 py-1.5 text-sm">Импорт CSV</button>
+      <button class="btn-primary rounded-md px-3 py-1.5 text-sm">+ Добавить стойку</button>
+    </div>
+  </div>
+
+  <!-- floor plan -->
+  <div class="bg-card border border-border rounded-xl p-8 dot-grid">
+    <div class="text-[11px] text-muted mono mb-4">FLOOR PLAN · 12.4 × 6.8 м</div>
+    <div id="rackFloor" class="flex items-end gap-8 justify-center py-6"></div>
+    <div class="flex items-center gap-4 text-[11px] text-muted mt-6">
+      <span class="flex items-center gap-1.5"><span class="led bg-ok"></span> исправно</span>
+      <span class="flex items-center gap-1.5"><span class="led bg-warn"></span> предупреждение</span>
+      <span class="flex items-center gap-1.5"><span class="led bg-crit"></span> критично</span>
+      <span class="ml-auto mono">u = юнит · 1U ≈ 44.45 мм</span>
+    </div>
+  </div>
+
+  <!-- KPIs -->
+  <div class="grid grid-cols-4 gap-4 mt-6">
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted">Средний ЦП по стойкам</div>
+      <div class="mt-1 text-2xl mono">37<span class="text-sm text-muted">%</span></div>
+      <div class="text-[11px] text-ok mt-1">▼ 4% за час</div>
+    </div>
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted">Пропускная способность</div>
+      <div class="mt-1 text-2xl mono">4.7<span class="text-sm text-muted"> Гбит/с</span></div>
+      <div class="text-[11px] text-muted mt-1">пик 7.2 в 12:04</div>
+    </div>
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted">Открытые оповещения</div>
+      <div class="mt-1 text-2xl mono">4</div>
+      <div class="text-[11px] text-warn mt-1">1 критично · 3 предупр.</div>
+    </div>
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div class="text-xs text-muted">Свободных U-слотов</div>
+      <div class="mt-1 text-2xl mono">83<span class="text-sm text-muted">/210</span></div>
+      <div class="text-[11px] text-muted mt-1">заполненность 60%</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SCREEN 2: RACK DETAIL ============ -->
+<section data-screen="rack" class="screen hidden">
+  <div class="flex items-center justify-between mb-5">
+    <div class="flex items-center gap-2 text-sm">
+      <button class="text-muted hover:text-text" onclick="showScreen('overview')">← Обзор</button>
+      <span class="text-muted">/</span>
+      <h1 class="font-semibold">Стойка <span class="mono">R-02 · Core Network</span></h1>
+      <span class="chip mono text-[11px] px-2 py-0.5 rounded ml-2">42U</span>
+      <span class="chip mono text-[11px] px-2 py-0.5 rounded flex items-center gap-1"><span class="led bg-ok"></span>OK</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button class="btn rounded-md px-3 py-1.5 text-sm">Экспорт PDF</button>
+      <button class="btn rounded-md px-3 py-1.5 text-sm">Печать этикеток</button>
+      <button class="btn-primary rounded-md px-3 py-1.5 text-sm" onclick="openDeviceModal()">+ Устройство</button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-[420px_minmax(0,1fr)_320px] gap-5">
+
+    <!-- LEFT: rack front view -->
+    <div class="bg-card border border-border rounded-xl p-4">
+      <div class="flex items-center justify-between mb-3">
+        <span class="text-xs text-muted mono">FRONT VIEW · R-02</span>
+        <div class="flex gap-1 text-[11px]">
+          <button class="tab-active px-2 py-0.5 rounded">Перед</button>
+          <button class="tab px-2 py-0.5 rounded">Зад</button>
+        </div>
+      </div>
+      <div id="rackUnits" class="relative border border-border rounded-lg overflow-hidden bg-[#0b0f14]"></div>
+      <div class="flex items-center justify-between mt-3 text-[11px] text-muted mono">
+        <span>Заполнено 27U / 42U</span>
+        <span>Питание 1.4 кВт · 68% ИБП</span>
+      </div>
+    </div>
+
+    <!-- CENTER: device inspector -->
+    <div class="bg-card border border-border rounded-xl">
+      <div class="p-4 border-b border-border flex items-center justify-between">
+        <div>
+          <div class="text-xs text-muted mono">DEVICE · U18–U19</div>
+          <div class="text-lg font-semibold mt-0.5" id="devName">Mikrotik RB4011iGS+</div>
+          <div class="text-xs text-muted mt-0.5">Маршрутизатор · SN <span class="mono text-text">HFR8-9K2X-4Q</span></div>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="chip px-2 py-0.5 rounded text-[11px] flex items-center gap-1"><span class="led bg-ok"></span>online</span>
+          <button class="btn rounded-md px-2.5 py-1 text-xs">Пинг</button>
+          <button class="btn rounded-md px-2.5 py-1 text-xs">Reboot</button>
+        </div>
+      </div>
+
+      <!-- meta grid -->
+      <div class="grid grid-cols-4 gap-4 p-4 text-xs">
+        <div><div class="text-muted">IP</div><div class="mono mt-0.5">10.10.0.1</div></div>
+        <div><div class="text-muted">MAC</div><div class="mono mt-0.5">B8:69:F4:88:2C:11</div></div>
+        <div><div class="text-muted">Прошивка</div><div class="mono mt-0.5">RouterOS 7.14.3</div></div>
+        <div><div class="text-muted">VLAN по умолч.</div><div class="mono mt-0.5">10</div></div>
+        <div><div class="text-muted">Аптайм</div><div class="mono mt-0.5">62d 04h</div></div>
+        <div><div class="text-muted">Мощность</div><div class="mono mt-0.5">28 Вт</div></div>
+        <div><div class="text-muted">Владелец</div><div class="mt-0.5">NetOps</div></div>
+        <div><div class="text-muted">Обновлено</div><div class="mono mt-0.5">14:23:07</div></div>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- tabs -->
+      <div class="px-4 pt-3 flex gap-1 text-sm">
+        <button class="tab-active px-3 py-1.5 rounded-md">Порты</button>
+        <button class="tab px-3 py-1.5 rounded-md">Кабели</button>
+        <button class="tab px-3 py-1.5 rounded-md">Метрики</button>
+        <button class="tab px-3 py-1.5 rounded-md">Заметки</button>
+      </div>
+
+      <!-- ports table -->
+      <div class="p-4">
+        <table class="w-full text-sm">
+          <thead class="text-[11px] uppercase text-muted">
+            <tr class="text-left">
+              <th class="py-2">Порт</th><th>Тип</th><th>IP</th><th>Устройство</th><th>Кабель</th><th>Скор.</th><th>VLAN</th><th>Статус</th><th></th>
+            </tr>
+          </thead>
+          <tbody id="portTable" class="mono text-[12px]"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- RIGHT: live stats -->
+    <div class="space-y-4">
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="text-xs text-muted mono mb-3">LIVE · 5s</div>
+        <div class="flex items-center gap-4">
+          <div class="gauge" style="--v:42;--c:#22C55E"><span class="mono">42%</span></div>
+          <div>
+            <div class="text-xs text-muted">ЦП</div>
+            <div class="mono text-lg">42%</div>
+            <div class="text-[11px] text-muted">4 ядра · 1.4 ГГц</div>
+          </div>
+        </div>
+      </div>
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="flex items-center gap-4">
+          <div class="gauge" style="--v:63;--c:#EAB308"><span class="mono">63%</span></div>
+          <div>
+            <div class="text-xs text-muted">ОЗУ</div>
+            <div class="mono text-lg">632 / 1024 МБ</div>
+            <div class="text-[11px] text-muted">своп 0%</div>
+          </div>
+        </div>
+      </div>
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="text-xs text-muted">Диск</div>
+        <div class="mt-2 h-2 rounded bg-[#21262d] overflow-hidden"><div class="h-full bg-accent" style="width:22%"></div></div>
+        <div class="flex justify-between mt-1 text-[11px] mono text-muted"><span>22%</span><span>128 МБ / 512 МБ</span></div>
+      </div>
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="grid grid-cols-2 gap-3 text-xs">
+          <div><div class="text-muted">Пинг</div><div class="mono text-ok">2.1 мс</div></div>
+          <div><div class="text-muted">Потери</div><div class="mono">0%</div></div>
+          <div><div class="text-muted">Аптайм</div><div class="mono">62d 04h</div></div>
+          <div><div class="text-muted">Обнаружено</div><div class="mono">14:23:07</div></div>
+        </div>
+      </div>
+      <div class="bg-card border border-border rounded-xl p-4">
+        <div class="text-xs text-muted mb-2">Трафик 1ч</div>
+        <svg viewBox="0 0 200 60" class="spark">
+          <defs><linearGradient id="g1" x1="0" x2="0" y1="0" y2="1">
+            <stop offset="0%" stop-color="#3B82F6" stop-opacity=".6"/>
+            <stop offset="100%" stop-color="#3B82F6" stop-opacity="0"/>
+          </linearGradient></defs>
+          <path d="M0,45 L20,38 L40,42 L60,30 L80,34 L100,20 L120,28 L140,18 L160,26 L180,15 L200,22 L200,60 L0,60 Z" fill="url(#g1)"/>
+          <path d="M0,45 L20,38 L40,42 L60,30 L80,34 L100,20 L120,28 L140,18 L160,26 L180,15 L200,22" fill="none" stroke="#3B82F6" stroke-width="1.5"/>
+        </svg>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SCREEN 3: TOPOLOGY ============ -->
+<section data-screen="topology" class="screen hidden">
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-xl font-semibold">Топология сети</h1>
+      <p class="text-sm text-muted mt-0.5">Клик по узлу — подсветит соединения. Наведи на линию — увидишь ширину канала.</p>
+    </div>
+    <div class="flex items-center gap-2 text-xs">
+      <label class="flex items-center gap-1.5 chip px-2 py-1 rounded"><input type="checkbox" checked class="accent-accent"/> Оптика</label>
+      <label class="flex items-center gap-1.5 chip px-2 py-1 rounded"><input type="checkbox" checked class="accent-accent"/> UTP</label>
+      <label class="flex items-center gap-1.5 chip px-2 py-1 rounded"><input type="checkbox" checked class="accent-accent"/> Cat5e</label>
+      <div class="w-px h-5 bg-border mx-1"></div>
+      <button class="btn rounded-md px-2 py-1">−</button>
+      <span class="mono">100%</span>
+      <button class="btn rounded-md px-2 py-1">+</button>
+    </div>
+  </div>
+
+  <div class="relative bg-card border border-border rounded-xl overflow-hidden">
+    <div class="dot-grid absolute inset-0"></div>
+    <svg id="topoSvg" viewBox="0 0 1200 620" class="relative w-full h-[620px]"></svg>
+
+    <!-- legend -->
+    <div class="absolute left-4 bottom-4 bg-[#0d1117cc] border border-border rounded-md px-3 py-2 text-[11px] backdrop-blur">
+      <div class="flex items-center gap-2 mb-1"><span class="w-4 h-[2px] bg-accent"></span>оптоволокно 10G</div>
+      <div class="flex items-center gap-2 mb-1"><span class="w-4 h-[2px] bg-muted"></span>UTP 1G</div>
+      <div class="flex items-center gap-2"><span class="w-4 h-[2px] bg-warn"></span>Cat5e 100M</div>
+    </div>
+    <!-- minimap -->
+    <div class="absolute right-4 bottom-4 w-40 h-24 bg-[#0d1117cc] border border-border rounded-md">
+      <div class="w-full h-full dot-grid relative">
+        <div class="absolute inset-3 border border-accent/60 rounded-sm"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SCREEN 4: MONITORING ============ -->
+<section data-screen="monitor" class="screen hidden">
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-xl font-semibold">Мониторинг</h1>
+      <p class="text-sm text-muted mt-0.5">Реальное время. Кликните карточку — увидите исторический график.</p>
+    </div>
+    <div class="flex items-center gap-2 text-xs">
+      <div class="flex chip rounded overflow-hidden">
+        <button class="px-2 py-1 tab-active">1ч</button>
+        <button class="px-2 py-1 tab">6ч</button>
+        <button class="px-2 py-1 tab">24ч</button>
+        <button class="px-2 py-1 tab">7д</button>
+      </div>
+      <button class="btn rounded-md px-3 py-1.5">Правила оповещений</button>
+    </div>
+  </div>
+
+  <div id="monitorGrid" class="grid grid-cols-3 gap-4"></div>
+
+  <div class="mt-8">
+    <h2 class="text-sm font-semibold mb-3">Правила оповещений</h2>
+    <div class="bg-card border border-border rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="text-[11px] uppercase text-muted bg-[#0d1117]">
+          <tr class="text-left"><th class="p-3">Правило</th><th>Метрика</th><th>Порог</th><th>Устройства</th><th>Канал</th><th>Активно</th></tr>
+        </thead>
+        <tbody id="rulesTable" class="mono text-[12px]"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<!-- ============ SCREEN 5: EVENT LOG ============ -->
+<section data-screen="events" class="screen hidden">
+  <div class="flex items-center justify-between mb-5">
+    <div>
+      <h1 class="text-xl font-semibold">Журнал событий</h1>
+      <p class="text-sm text-muted mt-0.5">Клик по строке — раскроет подробности.</p>
+    </div>
+    <div class="flex gap-2">
+      <button class="btn rounded-md px-3 py-1.5 text-sm">Отметить прочитанным</button>
+      <button class="btn-primary rounded-md px-3 py-1.5 text-sm">Экспорт CSV</button>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-[240px_minmax(0,1fr)] gap-5">
+    <!-- filters -->
+    <aside class="bg-card border border-border rounded-xl p-4 text-sm h-max sticky top-32">
+      <div class="text-xs text-muted mono mb-2">ФИЛЬТРЫ</div>
+      <div class="space-y-4">
+        <div>
+          <div class="text-xs text-muted mb-1.5">Стойка</div>
+          <div class="space-y-1">
+            <label class="flex items-center gap-2"><input type="checkbox" class="accent-accent" checked/> R-01</label>
+            <label class="flex items-center gap-2"><input type="checkbox" class="accent-accent" checked/> R-02</label>
+            <label class="flex items-center gap-2"><input type="checkbox" class="accent-accent" checked/> R-03</label>
+            <label class="flex items-center gap-2"><input type="checkbox" class="accent-accent"/> R-04</label>
+            <label class="flex items-center gap-2"><input type="checkbox" class="accent-accent"/> R-05</label>
+          </div>
+        </div>
+        <div>
+          <div class="text-xs text-muted mb-1.5">Серьёзность</div>
+          <div class="flex flex-wrap gap-1.5 text-xs">
+            <span class="chip px-2 py-1 rounded flex items-center gap-1"><span class="led bg-crit"></span>Критично</span>
+            <span class="chip px-2 py-1 rounded flex items-center gap-1"><span class="led bg-warn"></span>Предупр.</span>
+            <span class="chip px-2 py-1 rounded flex items-center gap-1"><span class="led bg-muted"></span>Инфо</span>
+          </div>
+        </div>
+        <div>
+          <div class="text-xs text-muted mb-1.5">Дата</div>
+          <input type="date" class="field rounded-md w-full px-2 py-1.5 mono text-xs"/>
+        </div>
+      </div>
+    </aside>
+
+    <div class="bg-card border border-border rounded-xl overflow-hidden">
+      <table class="w-full text-sm">
+        <thead class="text-[11px] uppercase text-muted bg-[#0d1117]">
+          <tr class="text-left">
+            <th class="p-3">Время</th><th>Сев.</th><th>Устройство</th><th>Стойка</th><th>Описание</th><th>Решено</th>
+          </tr>
+        </thead>
+        <tbody id="eventsTable"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<!-- ============ ADD/EDIT DEVICE MODAL ============ -->
+<div id="deviceModal" class="fixed inset-0 z-50 hidden items-center justify-center modal-back">
+  <div class="w-[720px] bg-card border border-border rounded-xl shadow-2xl">
+    <div class="flex items-center justify-between p-4 border-b border-border">
+      <div>
+        <div class="text-xs text-muted mono">R-02 / U-20</div>
+        <div class="font-semibold">Добавить устройство</div>
+      </div>
+      <button onclick="closeDeviceModal()" class="text-muted hover:text-text text-xl leading-none">×</button>
+    </div>
+    <div class="p-5 space-y-4 max-h-[70vh] overflow-y-auto scrollbar">
+      <div class="grid grid-cols-2 gap-4">
+        <label class="block">
+          <div class="text-xs text-muted mb-1">Тип устройства</div>
+          <select class="field rounded-md w-full px-3 py-2 text-sm">
+            <option>🖧 Маршрутизатор</option><option>🖥 Сервер</option><option>⚡ ИБП</option>
+            <option>🔀 Коммутатор</option><option>🧷 Патч-панель</option><option>💾 СХД</option>
+          </select>
+        </label>
+        <label class="block"><div class="text-xs text-muted mb-1">Название</div><input class="field rounded-md w-full px-3 py-2 text-sm" placeholder="core-sw-02"/></label>
+        <label class="block"><div class="text-xs text-muted mb-1">Модель</div><input class="field rounded-md w-full px-3 py-2 text-sm" placeholder="Cisco Catalyst 2960-X"/></label>
+        <label class="block"><div class="text-xs text-muted mb-1">Серийный номер</div><input class="field rounded-md w-full px-3 py-2 text-sm mono" placeholder="FCW2148A0BG"/></label>
+        <label class="block"><div class="text-xs text-muted mb-1">IP-адрес</div><input class="field rounded-md w-full px-3 py-2 text-sm mono" placeholder="10.10.0.24"/></label>
+        <label class="block"><div class="text-xs text-muted mb-1">MAC</div><input class="field rounded-md w-full px-3 py-2 text-sm mono" placeholder="AA:BB:CC:11:22:33"/></label>
+        <label class="block"><div class="text-xs text-muted mb-1">Стойка</div><select class="field rounded-md w-full px-3 py-2 text-sm"><option>R-01</option><option selected>R-02</option><option>R-03</option><option>R-04</option><option>R-05</option></select></label>
+        <label class="block"><div class="text-xs text-muted mb-1">U-слот · размер</div>
+          <div class="flex gap-2"><input class="field rounded-md w-full px-3 py-2 text-sm mono" placeholder="U20"/><input class="field rounded-md w-24 px-3 py-2 text-sm mono" placeholder="1U"/></div>
+        </label>
+        <label class="block col-span-2"><div class="text-xs text-muted mb-1">Прошивка · заметки</div><textarea class="field rounded-md w-full px-3 py-2 text-sm" rows="2" placeholder="IOS 15.2 · заменить блок питания в Q4"></textarea></label>
+      </div>
+
+      <div>
+        <div class="flex items-center justify-between mb-2">
+          <div class="text-sm font-semibold">Порты</div>
+          <button class="btn rounded-md text-xs px-2 py-1">+ Добавить порт</button>
+        </div>
+        <table class="w-full text-xs">
+          <thead class="text-[11px] uppercase text-muted"><tr class="text-left"><th class="py-1.5">№</th><th>Тип</th><th>IP</th><th>Подключено</th><th>Кабель</th><th>VLAN</th><th></th></tr></thead>
+          <tbody class="mono">
+            <tr class="border-t border-border"><td class="py-1.5">1</td><td>RJ45</td><td>10.10.0.24</td><td>uplink-r02</td><td>Cat6</td><td>10</td><td class="text-muted hover:text-crit cursor-pointer">×</td></tr>
+            <tr class="border-t border-border"><td class="py-1.5">2</td><td>SFP+</td><td>—</td><td>srv-web-01</td><td>Оптика</td><td>20</td><td class="text-muted hover:text-crit cursor-pointer">×</td></tr>
+            <tr class="border-t border-border"><td class="py-1.5">3</td><td>RJ45</td><td>—</td><td>—</td><td>—</td><td>—</td><td class="text-muted hover:text-crit cursor-pointer">×</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    <div class="flex items-center justify-end gap-2 p-4 border-t border-border">
+      <button onclick="closeDeviceModal()" class="btn rounded-md px-3 py-1.5 text-sm">Отмена</button>
+      <button onclick="closeDeviceModal()" class="btn-primary rounded-md px-3 py-1.5 text-sm">Сохранить</button>
+    </div>
+  </div>
+</div>
+
+<div id="tooltip" class="tooltip hidden"></div>
+
+<script>
+/* ========= MOCK DATA ========= */
+const RACKS = [
+  { id:'R-01', name:'Edge / DMZ',       units:42, filled:22, status:'ok',   devices:9,  power:'1.2 кВт' },
+  { id:'R-02', name:'Core Network',     units:42, filled:27, status:'ok',   devices:11, power:'1.4 кВт' },
+  { id:'R-03', name:'Compute A',        units:42, filled:35, status:'warn', devices:14, power:'2.1 кВт' },
+  { id:'R-04', name:'Storage',          units:42, filled:19, status:'ok',   devices:6,  power:'0.9 кВт' },
+  { id:'R-05', name:'Compute B',        units:42, filled:24, status:'crit', devices:12, power:'1.8 кВт' },
+];
+
+/* R-02 rack devices — top→bottom by U */
+const R02_DEVICES = [
+  { u:41, size:1, type:'patch',  name:'Patch Panel A',       model:'24×RJ45',          ports: portsGrid(24,{err:[7]}) },
+  { u:40, size:1, type:'switch', name:'Cisco C2960-X',       model:'24 портов 1G',     ports: portsGrid(24,{active:20}) },
+  { u:38, size:2, type:'router', name:'Mikrotik RB4011iGS+', model:'10×RJ45 + SFP+',   ports: portsGrid(11,{active:6}) },
+  { u:35, size:3, type:'server', name:'Dell PowerEdge R640', model:'2×Xeon · 128GB',   drives:8, cpu:42, ram:63 },
+  { u:32, size:3, type:'server', name:'Dell PowerEdge R640', model:'2×Xeon · 128GB',   drives:8, cpu:71, ram:80 },
+  { u:29, size:3, type:'server', name:'Supermicro 2029U',    model:'AMD EPYC · 256GB', drives:6, cpu:22, ram:41 },
+  { u:26, size:1, type:'switch', name:'MikroTik CRS326',     model:'24 портов + 2 SFP',ports: portsGrid(26,{active:14,err:[19]}) },
+  { u:24, size:2, type:'server', name:'HPE ProLiant DL380',  model:'2×Xeon · 96GB',    drives:4, cpu:33, ram:52 },
+  { u:22, size:1, type:'patch',  name:'Patch Panel B',       model:'24×RJ45',          ports: portsGrid(24,{active:0}) },
+  { u:3,  size:3, type:'ups',    name:'APC Smart-UPS 3000',  model:'2700VA',           batt:82, load:68 },
+];
+
+function portsGrid(n, opts={}){
+  const arr = [];
+  for (let i=0;i<n;i++){
+    let state = 'empty';
+    if (opts.err && opts.err.includes(i)) state = 'err';
+    else if (typeof opts.active === 'number' ? i < opts.active : (opts.active !== false && Math.random()<0.55)) state = 'active';
+    arr.push({ i:i+1, state,
+      ip: state==='active' ? `10.10.${1+Math.floor(i/8)}.${10+i}` : '',
+      peer: state==='active' ? ['srv-web-01','srv-db-02','core-sw','uplink','fw-edge'][i%5] : '',
+      cable: state==='active' ? ['Cat6','Оптика','Cat5e'][i%3] : '—',
+      speed: state==='active' ? ['1G','10G','100M'][i%3] : '—',
+      vlan: state==='active' ? [10,20,30,99][i%4] : '—',
+    });
+  }
+  return arr;
+}
+
+const ROUTER_PORTS = R02_DEVICES.find(d=>d.type==='router').ports.slice(0,10).map((p,i)=>({
+  ...p, i:i+1, type: i<8?'RJ45':'SFP+',
+  status: p.state==='active'?'up':(p.state==='err'?'error':'down')
+}));
+
+const NODES = [
+  { id:'edge',   x:120, y:120, kind:'router', label:'edge-fw',   sub:'10.0.0.1' },
+  { id:'core',   x:480, y:150, kind:'switch', label:'core-sw',   sub:'10.10.0.2' },
+  { id:'rtr',    x:480, y:340, kind:'router', label:'rb4011',    sub:'10.10.0.1' },
+  { id:'srv1',   x:820, y:100, kind:'server', label:'srv-web-01',sub:'10.10.1.11' },
+  { id:'srv2',   x:820, y:220, kind:'server', label:'srv-web-02',sub:'10.10.1.12' },
+  { id:'db',     x:820, y:360, kind:'server', label:'srv-db-01', sub:'10.10.2.20' },
+  { id:'stor',   x:1000,y:470, kind:'server', label:'nas-01',    sub:'10.10.3.5'  },
+  { id:'patch',  x:280, y:470, kind:'panel',  label:'patch-A',   sub:'24 порта'   },
+  { id:'sw2',    x:640, y:490, kind:'switch', label:'crs326',    sub:'10.10.0.3'  },
+];
+const LINKS = [
+  { a:'edge', b:'core',  type:'fiber' },
+  { a:'core', b:'rtr',   type:'utp'   },
+  { a:'core', b:'srv1',  type:'fiber' },
+  { a:'core', b:'srv2',  type:'fiber' },
+  { a:'rtr',  b:'db',    type:'utp'   },
+  { a:'rtr',  b:'sw2',   type:'utp'   },
+  { a:'sw2',  b:'stor',  type:'cat5'  },
+  { a:'sw2',  b:'patch', type:'cat5'  },
+  { a:'patch',b:'rtr',   type:'utp'   },
+];
+
+const EVENTS = [
+  { t:'14:23:07', sev:'crit', dev:'srv-db-02',   rack:'R-05', text:'CPU выше 95% в течение 5 минут', resolved:false },
+  { t:'14:19:44', sev:'warn', dev:'crs326',      rack:'R-02', text:'Порт 19 в состоянии error-disable', resolved:false },
+  { t:'14:04:12', sev:'warn', dev:'ups-r05',     rack:'R-05', text:'Батарея на 42%, переход на сеть', resolved:false },
+  { t:'13:58:00', sev:'info', dev:'core-sw',     rack:'R-02', text:'Изменена конфигурация VLAN 30',   resolved:true  },
+  { t:'13:41:22', sev:'crit', dev:'nas-01',      rack:'R-04', text:'Диск 3 SMART failure',            resolved:true  },
+  { t:'12:59:18', sev:'info', dev:'rb4011',      rack:'R-02', text:'Прошивка обновлена до 7.14.3',   resolved:true  },
+  { t:'12:14:03', sev:'warn', dev:'srv-web-01',  rack:'R-03', text:'Пинг 128мс, деградация канала',   resolved:true  },
+  { t:'11:02:41', sev:'info', dev:'patch-A',     rack:'R-02', text:'Добавлен кабель Cat6 в порт 11',  resolved:true  },
+];
+
+const RULES = [
+  { name:'CPU высокий',        metric:'cpu',   thr:'> 90% за 5м', devs:'все серверы',   ch:'Telegram · Email', on:true },
+  { name:'ОЗУ переполнение',   metric:'ram',   thr:'> 85%',       devs:'compute',       ch:'Telegram',         on:true },
+  { name:'Пинг деградация',    metric:'ping',  thr:'> 100мс',     devs:'все узлы',      ch:'Email',            on:false },
+  { name:'ИБП батарея',        metric:'batt',  thr:'< 30%',       devs:'ИБП',           ch:'Telegram · SMS',   on:true },
+  { name:'Порт flap',          metric:'link',  thr:'> 5/мин',     devs:'коммутаторы',   ch:'Slack',            on:true },
+];
+
+/* ========= RENDER ========= */
+const $ = (s,r=document)=>r.querySelector(s);
+const $$ = (s,r=document)=>[...r.querySelectorAll(s)];
+
+// ---- floor plan
+function renderFloor(){
+  const wrap = $('#rackFloor');
+  wrap.innerHTML = RACKS.map(r=>{
+    const fillPct = Math.round(r.filled/r.units*100);
+    const glow = r.status==='ok'?'glow-ok':r.status==='warn'?'glow-warn':'glow-crit';
+    const dot  = r.status==='ok'?'bg-ok':r.status==='warn'?'bg-warn':'bg-crit';
+    return `
+      <div class="group relative cursor-pointer" data-rack="${r.id}" onclick="showScreen('rack')">
+        <div class="w-[130px] h-[240px] rounded-md border border-border bg-card2 ${glow} p-2 flex flex-col">
+          <div class="flex items-center justify-between text-[11px] mono">
+            <span>${r.id}</span>
+            <span class="led ${dot}"></span>
+          </div>
+          <div class="text-[11px] text-muted mt-0.5 leading-tight">${r.name}</div>
+          <div class="mt-2 flex-1 rounded border border-border overflow-hidden bg-[#0b0f14] relative">
+            ${Array.from({length:12}).map((_,i)=>{
+              const on = i < Math.floor(r.filled/r.units*12);
+              return `<div class="h-[7.5%] border-b border-[#1a1f27] ${on?'bg-[#1c2b3f]':''} flex items-center gap-0.5 px-1">
+                ${on?`<span class="w-1 h-1 rounded-full ${dot}"></span><span class="text-[8px] mono text-muted">${(i%3===0?'srv':'sw')}</span>`:''}
+              </div>`;
+            }).join('')}
+          </div>
+          <div class="mt-2 flex justify-between text-[10px] mono text-muted">
+            <span>${r.filled}/${r.units}U</span><span>${fillPct}%</span>
+          </div>
+        </div>
+        <!-- hover mini popup -->
+        <div class="hidden group-hover:block absolute left-1/2 -translate-x-1/2 -top-3 -translate-y-full w-56 bg-card border border-border rounded-lg p-3 z-20 shadow-xl">
+          <div class="flex items-center justify-between text-xs">
+            <span class="font-semibold">${r.id} · ${r.name}</span>
+            <span class="led ${dot}"></span>
+          </div>
+          <div class="grid grid-cols-2 gap-2 mt-2 text-[11px] mono">
+            <div><div class="text-muted">Устройств</div>${r.devices}</div>
+            <div><div class="text-muted">Питание</div>${r.power}</div>
+            <div><div class="text-muted">Заполнено</div>${r.filled}/${r.units}U</div>
+            <div><div class="text-muted">Статус</div>${r.status==='ok'?'исправно':r.status==='warn'?'предупр.':'критично'}</div>
+          </div>
+          <button class="mt-3 w-full btn-primary rounded-md py-1.5 text-xs">Открыть стойку →</button>
+        </div>
+      </div>`;
+  }).join('') + `
+    <div class="w-[130px] h-[240px] rounded-md border-2 border-dashed border-border grid place-items-center text-muted hover:text-accent hover:border-accent cursor-pointer text-xs">
+      <div class="text-center"><div class="text-2xl">+</div><div>Добавить стойку</div></div>
+    </div>`;
+}
+
+// ---- rack units (front view)
+function renderRack(){
+  const el = $('#rackUnits');
+  const uH = 14; // px per U
+  const total = 42;
+  const html = [];
+  // U ruler
+  html.push(`<div class="absolute top-0 left-0 bottom-0 w-8 text-[10px] mono text-muted select-none">
+    ${Array.from({length:total}).map((_,i)=>`<div style="height:${uH}px" class="flex items-center justify-end pr-1 border-b border-[#161b22]">${total-i}</div>`).join('')}
+  </div>`);
+  // devices
+  html.push(`<div class="ml-8 relative" style="height:${uH*total}px">`);
+  R02_DEVICES.forEach(d=>{
+    const topU = total - d.u - (d.size-1); // top edge in U-count from top
+    const top = topU * uH;
+    const h = d.size * uH;
+    html.push(renderDevice(d, top, h));
+  });
+  // empty click zones
+  const occupied = new Set();
+  R02_DEVICES.forEach(d=>{ for(let i=0;i<d.size;i++) occupied.add(d.u+i); });
+  for (let u=1; u<=total; u++){
+    if (occupied.has(u)) continue;
+    const top = (total - u) * uH;
+    html.push(`<div class="absolute left-0 right-0 u-slot text-[9px] mono text-muted hover:bg-[#1c2b3f]/50 cursor-pointer flex items-center justify-center opacity-0 hover:opacity-100"
+      style="top:${top}px;height:${uH}px" onclick="openDeviceModal()">+ добавить в U${u}</div>`);
+  }
+  html.push(`</div>`);
+  el.innerHTML = html.join('');
+  el.style.height = (uH*total + 2)+'px';
+
+  // port hover tooltips
+  $$('.port', el).forEach(p=>{
+    p.addEventListener('mousemove', (e)=>showTooltip(e, portTip(p.dataset)));
+    p.addEventListener('mouseleave', hideTooltip);
+  });
+}
+
+function renderDevice(d, top, h){
+  const base = `absolute left-1 right-1 rounded-md border border-border bg-card2 overflow-hidden`;
+  const style = `top:${top}px;height:${h}px`;
+  const led = `<span class="led bg-ok"></span>`;
+  if (d.type==='server'){
+    return `<div class="${base}" style="${style}">
+      <div class="h-full flex">
+        <div class="w-16 border-r border-border grid grid-cols-4 gap-[2px] p-1">
+          ${Array.from({length:d.drives}).map((_,i)=>`<div class="bg-[#0b0f14] border border-[#21262d] rounded-sm relative">
+            <span class="absolute right-0.5 top-0.5 w-1 h-1 rounded-full ${i%3===0?'bg-warn':'bg-ok'}"></span>
+          </div>`).join('')}
+        </div>
+        <div class="flex-1 px-2 py-1 flex flex-col justify-between">
+          <div class="flex items-center justify-between">
+            <div class="text-[11px] font-medium truncate">${d.name}</div>
+            ${led}
+          </div>
+          <div class="flex items-center gap-3 text-[10px] mono text-muted">
+            <span>CPU <span class="text-text">${d.cpu}%</span></span>
+            <span>RAM <span class="text-text">${d.ram}%</span></span>
+            <span class="ml-auto">U${d.u}-U${d.u+d.size-1}</span>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+  if (d.type==='ups'){
+    return `<div class="${base}" style="${style}">
+      <div class="h-full px-2 py-1 flex flex-col justify-between">
+        <div class="flex items-center justify-between">
+          <div class="text-[11px] font-medium">${d.name}</div>${led}
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="flex-1"><div class="h-1.5 bg-[#21262d] rounded"><div class="h-full bg-ok rounded" style="width:${d.batt}%"></div></div>
+            <div class="text-[10px] mono text-muted mt-0.5">Батарея ${d.batt}%</div></div>
+          <div class="flex-1"><div class="h-1.5 bg-[#21262d] rounded"><div class="h-full bg-warn rounded" style="width:${d.load}%"></div></div>
+            <div class="text-[10px] mono text-muted mt-0.5">Нагрузка ${d.load}%</div></div>
+        </div>
+      </div>
+    </div>`;
+  }
+  // router / switch / patch — port grid
+  const cols = d.type==='patch' ? 24 : (d.ports.length > 16 ? 24 : d.ports.length);
+  return `<div class="${base}" style="${style}">
+    <div class="h-full px-2 py-1 flex items-center gap-2">
+      <div class="w-32 shrink-0">
+        <div class="flex items-center gap-1">${led}<span class="text-[11px] font-medium truncate">${d.name}</span></div>
+        <div class="text-[10px] mono text-muted">${d.model}</div>
+      </div>
+      <div class="flex-1 grid gap-[3px]" style="grid-template-columns: repeat(${cols}, minmax(0,1fr))">
+        ${d.ports.map(p=>`<span class="port ${p.state}"
+          data-port="${p.i}" data-ip="${p.ip}" data-peer="${p.peer}" data-cable="${p.cable}" data-speed="${p.speed}" data-vlan="${p.vlan}" data-state="${p.state}"
+        ></span>`).join('')}
+      </div>
+      <div class="text-[10px] mono text-muted shrink-0">U${d.u}${d.size>1?'-U'+(d.u+d.size-1):''}</div>
+    </div>
+  </div>`;
+}
+
+function portTip(d){
+  const st = d.state==='active'?'<span class="text-ok">● up</span>':(d.state==='err'?'<span class="text-crit">● error</span>':'<span class="text-muted">○ down</span>');
+  return `
+    <div class="flex items-center justify-between mb-1">
+      <span class="mono text-text">Port ${d.port}</span>${st}
+    </div>
+    <div class="grid grid-cols-2 gap-x-3 gap-y-1 mono text-[11px]">
+      <div class="text-muted">IP</div><div>${d.ip||'—'}</div>
+      <div class="text-muted">Peer</div><div>${d.peer||'—'}</div>
+      <div class="text-muted">Кабель</div><div>${d.cable}</div>
+      <div class="text-muted">Скорость</div><div>${d.speed}</div>
+      <div class="text-muted">VLAN</div><div>${d.vlan}</div>
+    </div>
+    <button class="mt-2 w-full text-[11px] btn rounded py-1">Редактировать</button>`;
+}
+
+// ---- port table
+function renderPortTable(){
+  $('#portTable').innerHTML = ROUTER_PORTS.map(p=>{
+    const st = p.status==='up'?'<span class="text-ok">● up</span>':(p.status==='error'?'<span class="text-crit">● error</span>':'<span class="text-muted">○ down</span>');
+    return `<tr class="row-hover border-t border-border">
+      <td class="py-1.5">${p.i}</td>
+      <td>${p.type}</td>
+      <td>${p.ip||'—'}</td>
+      <td>${p.peer||'—'}</td>
+      <td>${p.cable}</td>
+      <td>${p.speed}</td>
+      <td>${p.vlan}</td>
+      <td>${st}</td>
+      <td class="text-muted hover:text-accent cursor-pointer">✎</td>
+    </tr>`;
+  }).join('');
+}
+
+// ---- topology
+function renderTopo(){
+  const svg = $('#topoSvg');
+  const nodeById = Object.fromEntries(NODES.map(n=>[n.id,n]));
+  const cableColor = { fiber:'cable-blue', utp:'cable-gray', cat5:'cable-yellow' };
+  const cableLabel = { fiber:'10 Гбит/с · оптика', utp:'1 Гбит/с · UTP', cat5:'100 Мбит/с · Cat5e' };
+
+  const links = LINKS.map((l,i)=>{
+    const a = nodeById[l.a], b = nodeById[l.b];
+    return `<line class="link ${cableColor[l.type]}" data-link="${i}"
+      x1="${a.x}" y1="${a.y}" x2="${b.x}" y2="${b.y}" stroke-width="2"
+      data-label="${cableLabel[l.type]}"/>`;
+  }).join('');
+
+  const nodes = NODES.map(n=>{
+    const icon = {
+      router:'🖧', switch:'🔀', server:'🖥', panel:'🧷'
+    }[n.kind] || '⬛';
+    return `<g class="node-group cursor-pointer" data-node="${n.id}" transform="translate(${n.x-46},${n.y-26})">
+      <rect class="node" width="92" height="52" rx="8"/>
+      <text x="12" y="30" font-size="18">${icon}</text>
+      <text class="node-label" x="34" y="22">${n.label}</text>
+      <text class="node-sub"   x="34" y="38">${n.sub}</text>
+    </g>`;
+  }).join('');
+
+  svg.innerHTML = `
+    <g id="links">${links}</g>
+    <g id="nodes">${nodes}</g>`;
+
+  // interactions
+  $$('#links line').forEach(l=>{
+    l.addEventListener('mousemove', e=>showTooltip(e,
+      `<div class="mono text-text">${l.dataset.label}</div>
+       <div class="text-muted text-[11px] mt-1">Задержка 0.4 мс · загрузка 34%</div>`));
+    l.addEventListener('mouseleave', hideTooltip);
+  });
+  $$('#nodes .node-group').forEach(g=>{
+    g.addEventListener('click', ()=>{
+      const id = g.dataset.node;
+      const connected = new Set([id]);
+      LINKS.forEach((l,i)=>{ if (l.a===id||l.b===id){ connected.add(l.a); connected.add(l.b); } });
+      $$('#links line').forEach((line,i)=>{
+        const l = LINKS[i];
+        line.classList.toggle('dim', !(l.a===id||l.b===id));
+      });
+      $$('#nodes .node-group').forEach(x=>{
+        x.querySelector('rect').classList.toggle('selected', x.dataset.node===id);
+        x.style.opacity = connected.has(x.dataset.node) ? 1 : .35;
+      });
+    });
+  });
+}
+
+// ---- monitoring
+const MON = [
+  { name:'core-sw',     ip:'10.10.0.2',  cpu:22, ram:41, disk:18, ping:0.8, up:'62d', st:'ok' },
+  { name:'rb4011',      ip:'10.10.0.1',  cpu:42, ram:63, disk:22, ping:2.1, up:'62d', st:'ok' },
+  { name:'srv-web-01',  ip:'10.10.1.11', cpu:71, ram:80, disk:64, ping:12,  up:'14d', st:'warn' },
+  { name:'srv-web-02',  ip:'10.10.1.12', cpu:33, ram:52, disk:60, ping:1.4, up:'14d', st:'ok' },
+  { name:'srv-db-01',   ip:'10.10.2.20', cpu:58, ram:74, disk:81, ping:0.7, up:'40d', st:'ok' },
+  { name:'srv-db-02',   ip:'10.10.2.21', cpu:96, ram:88, disk:76, ping:0.9, up:'40d', st:'crit' },
+  { name:'nas-01',      ip:'10.10.3.5',  cpu:12, ram:34, disk:91, ping:1.8, up:'110d',st:'warn' },
+  { name:'crs326',      ip:'10.10.0.3',  cpu:14, ram:22, disk:8,  ping:0.6, up:'50d', st:'ok' },
+  { name:'ups-r05',     ip:'10.10.0.9',  cpu:0,  ram:0,  disk:0,  ping:1.1, up:'—',   st:'warn' },
+];
+
+function renderMonitor(){
+  const el = $('#monitorGrid');
+  el.innerHTML = MON.map(m=>{
+    const stCls = m.st==='ok'?'border-ok/40':m.st==='warn'?'border-warn/40':'border-crit/40';
+    const stDot = m.st==='ok'?'bg-ok':m.st==='warn'?'bg-warn':'bg-crit';
+    const cpuC = m.cpu>85?'#EF4444':m.cpu>60?'#EAB308':'#22C55E';
+    const ramC = m.ram>85?'#EF4444':m.ram>60?'#EAB308':'#22C55E';
+    const pingCls = m.ping>10?'text-crit':m.ping>5?'text-warn':'text-ok';
+    return `<div class="bg-card border ${stCls} rounded-xl p-4 cursor-pointer hover:border-accent">
+      <div class="flex items-center justify-between">
+        <div>
+          <div class="flex items-center gap-1.5 font-semibold text-sm"><span class="led ${stDot}"></span>${m.name}</div>
+          <div class="mono text-[11px] text-muted">${m.ip}</div>
+        </div>
+        <div class="text-[11px] mono text-muted">up ${m.up}</div>
+      </div>
+      <div class="flex items-center gap-3 mt-4">
+        <div class="gauge" style="--v:${m.cpu};--c:${cpuC}"><span class="mono">${m.cpu}%</span></div>
+        <div class="gauge" style="--v:${m.ram};--c:${ramC}"><span class="mono">${m.ram}%</span></div>
+        <div class="flex-1">
+          <div class="text-[10px] text-muted">Диск</div>
+          <div class="h-1.5 bg-[#21262d] rounded mt-1"><div class="h-full bg-accent rounded" style="width:${m.disk}%"></div></div>
+          <div class="mono text-[10px] mt-0.5 flex justify-between text-muted"><span>${m.disk}%</span><span>${pingCls==='text-ok'?'ping ':'ping '}${m.ping}мс</span></div>
+        </div>
+      </div>
+      <svg viewBox="0 0 200 40" class="spark mt-3">
+        <polyline fill="none" stroke="${cpuC}" stroke-width="1.5"
+          points="${Array.from({length:20}).map((_,i)=>`${i*10.5},${30 - Math.round(Math.random()*22)}`).join(' ')}"/>
+      </svg>
+    </div>`;
+  }).join('');
+
+  $('#rulesTable').innerHTML = RULES.map(r=>`
+    <tr class="border-t border-border row-hover">
+      <td class="p-3 text-text font-sans">${r.name}</td>
+      <td>${r.metric}</td>
+      <td>${r.thr}</td>
+      <td class="text-muted">${r.devs}</td>
+      <td>${r.ch}</td>
+      <td>
+        <button class="w-9 h-5 rounded-full ${r.on?'bg-accent':'bg-[#30363D]'} relative">
+          <span class="absolute top-0.5 ${r.on?'right-0.5':'left-0.5'} w-4 h-4 bg-white rounded-full"></span>
+        </button>
+      </td>
+    </tr>`).join('');
+}
+
+// ---- events
+function renderEvents(){
+  $('#eventsTable').innerHTML = EVENTS.map((e,i)=>`
+    <tr class="border-t border-border row-hover align-top">
+      <td class="p-3 mono text-[12px] text-muted whitespace-nowrap">${e.t}</td>
+      <td class="p-3"><span class="chip px-2 py-0.5 rounded text-[11px] flex items-center gap-1 w-max
+        ${e.sev==='crit'?'sev-crit':e.sev==='warn'?'sev-warn':'sev-info'}">
+        <span class="led ${e.sev==='crit'?'bg-crit':e.sev==='warn'?'bg-warn':'bg-muted'}"></span>
+        ${e.sev==='crit'?'КРИТ':e.sev==='warn'?'ПРЕД':'ИНФО'}
+      </span></td>
+      <td class="p-3 mono text-[12px]">${e.dev}</td>
+      <td class="p-3 mono text-[12px] text-muted">${e.rack}</td>
+      <td class="p-3">
+        <details>
+          <summary class="text-sm">${e.text}</summary>
+          <div class="mt-2 text-[12px] text-muted bg-[#0d1117] border border-border rounded p-3 mono">
+            [${e.t}] ${e.dev} — ${e.text}<br/>
+            trace_id=<span class="text-text">a91c8f</span> · handler=<span class="text-text">alert.rule.${e.sev}</span><br/>
+            action: ${e.resolved?'ack by nnfirdavs':'ожидает подтверждения'}
+          </div>
+        </details>
+      </td>
+      <td class="p-3 text-[12px]">${e.resolved?'<span class="text-ok">✓ да</span>':'<span class="text-muted">—</span>'}</td>
+    </tr>`).join('');
+}
+
+// ---- tooltip
+function showTooltip(e, html){
+  const t = $('#tooltip');
+  t.innerHTML = html;
+  t.classList.remove('hidden');
+  const pad = 14;
+  const x = Math.min(window.innerWidth  - 260, e.clientX + pad);
+  const y = Math.min(window.innerHeight - 200, e.clientY + pad);
+  t.style.left = x+'px'; t.style.top = y+'px';
+}
+function hideTooltip(){ $('#tooltip').classList.add('hidden'); }
+
+// ---- tabs
+function showScreen(name){
+  $$('.screen').forEach(s=>s.classList.toggle('hidden', s.dataset.screen!==name));
+  $$('[data-tab]').forEach(b=>{
+    const on = b.dataset.tab===name;
+    b.classList.toggle('tab-active', on);
+    b.classList.toggle('tab', !on);
+  });
+  window.scrollTo({top:0, behavior:'instant'});
+}
+$$('[data-tab]').forEach(b=> b.addEventListener('click', ()=> showScreen(b.dataset.tab)));
+
+// ---- modal
+function openDeviceModal(){ $('#deviceModal').classList.remove('hidden'); $('#deviceModal').classList.add('flex'); }
+function closeDeviceModal(){ $('#deviceModal').classList.add('hidden'); $('#deviceModal').classList.remove('flex'); }
+
+// ---- init
+renderFloor();
+renderRack();
+renderPortTable();
+renderTopo();
+renderMonitor();
+renderEvents();
+
+// ---- fake live updates
+setInterval(()=>{
+  $$('.gauge').forEach(g=>{
+    if (Math.random()<.5) return;
+    const cur = +getComputedStyle(g).getPropertyValue('--v') || 40;
+    const nx = Math.max(4, Math.min(98, cur + (Math.random()*14 - 7)));
+    g.style.setProperty('--v', nx.toFixed(0));
+    const sp = g.querySelector('span'); if (sp) sp.textContent = nx.toFixed(0)+'%';
+  });
+}, 2000);
+</script>
 </body>
 </html>
