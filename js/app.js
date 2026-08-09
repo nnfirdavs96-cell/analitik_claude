@@ -1,582 +1,547 @@
-/* =============== RackMap app =============== */
+// ============================================================
+// RackMap · клиентское приложение
+// ============================================================
 (function () {
-  const { racks, events, alerts } = window.RACKMAP;
-  const $ = (s, r = document) => r.querySelector(s);
+  'use strict';
+
+  const $  = (s, r = document) => r.querySelector(s);
   const $$ = (s, r = document) => Array.from(r.querySelectorAll(s));
-  const el = (tag, cls, html) => {
-    const e = document.createElement(tag);
-    if (cls) e.className = cls;
-    if (html != null) e.innerHTML = html;
-    return e;
-  };
 
-  let currentRackId = racks[0].id;
-  let currentDeviceId = racks[0].devices[0]?.id;
-
-  // ================= TABS =================
-  function showScreen(name) {
-    $$(".screen").forEach((s) => s.classList.toggle("active", s.dataset.screen === name));
-    $$(".tab").forEach((t) => t.classList.toggle("active", t.dataset.screen === name));
-    if (name === "topology") requestAnimationFrame(drawTopology);
-    if (name === "monitoring") renderMonitoring();
+  function switchScreen(name) {
+    $$('#tabs .tab').forEach(t => t.classList.toggle('active', t.dataset.screen === name));
+    $$('.screen').forEach(s => s.classList.toggle('active', s.dataset.screen === name));
+    if (name === 'topology') renderTopology();
   }
-  $("#tabs").addEventListener("click", (e) => {
-    const t = e.target.closest(".tab");
-    if (t) showScreen(t.dataset.screen);
-  });
-  document.addEventListener("click", (e) => {
-    const a = e.target.closest("[data-goto]");
-    if (a) { e.preventDefault(); showScreen(a.dataset.goto); }
-  });
+  $$('#tabs .tab').forEach(t => t.addEventListener('click', () => switchScreen(t.dataset.screen)));
+  $$('[data-goto]').forEach(a => a.addEventListener('click', e => {
+    e.preventDefault(); switchScreen(a.dataset.goto);
+  }));
 
-  // ================= CLOCK =================
   function tickClock() {
     const d = new Date();
-    const pad = (n) => String(n).padStart(2, "0");
-    $("#clock").textContent = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+    const pad = n => String(n).padStart(2, '0');
+    $('#clock').textContent = `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
   }
   tickClock(); setInterval(tickClock, 1000);
 
-  // ================= SCREEN 1: FLOORPLAN =================
+  // ============ Обзор ============
   function renderFloorplan() {
-    const fp = $("#floorplan");
-    fp.querySelectorAll(".rack-tile,.rack-placeholder").forEach((n) => n.remove());
-    racks.forEach((r) => {
-      const t = el("div", `rack-tile status-${r.status}`);
-      t.style.left = r.x + "px";
-      t.style.top = r.y + "px";
-      t.dataset.rackId = r.id;
-      const devBoxes = Array.from({ length: 28 }, (_, i) => {
-        if (i < r.devices.length) {
-          const s = r.devices[i].status;
-          return `<div class="rt-dev ${s === "green" ? "on" : s === "yellow" ? "warn" : s === "red" ? "err" : ""}"></div>`;
-        }
-        return `<div class="rt-dev"></div>`;
-      }).join("");
-      t.innerHTML = `
-        <div class="rt-name">
-          <span>${r.name}</span>
-          <span class="status-pill ${r.status}">${r.status === "green" ? "OK" : r.status === "yellow" ? "WARN" : "CRIT"}</span>
+    const root = $('#floorplan');
+    $$('.rack-tile', root).forEach(el => el.remove());
+
+    DATA.racks.forEach(r => {
+      const tile = document.createElement('div');
+      tile.className = `rack-tile ${r.status}`;
+      tile.innerHTML = `
+        <div class="rack-tile-head">
+          <b>${r.name}</b><span class="id">${r.id}</span>
         </div>
-        <div class="rt-devices">${devBoxes}</div>
-        <div class="rt-foot">
-          <span>${r.devices.length}/42U</span>
-          <span>${r.power}</span>
+        <div class="rack-mini">${miniRackContent()}</div>
+        <div class="rack-tile-foot">
+          <span class="mono">${r.online}/${r.devices}</span>
+          <span class="mono">${r.temp}</span>
         </div>
       `;
-      fp.appendChild(t);
-    });
-    // placeholder
-    const ph = el("div", "rack-placeholder", "+ Добавить стойку");
-    ph.style.left = (racks[racks.length - 1].x + 220) + "px";
-    ph.style.top = racks[0].y + "px";
-    fp.appendChild(ph);
-
-    // hover popup
-    fp.querySelectorAll(".rack-tile").forEach((t) => {
-      t.addEventListener("mouseenter", (ev) => showRackPop(ev, t.dataset.rackId));
-      t.addEventListener("mousemove", (ev) => moveFloating($("#rack-pop"), ev.clientX + 18, ev.clientY + 18));
-      t.addEventListener("mouseleave", () => $("#rack-pop").hidden = true);
-      t.addEventListener("click", () => { openRack(t.dataset.rackId); });
-    });
-  }
-  function showRackPop(ev, rackId) {
-    const r = racks.find((x) => x.id === rackId);
-    if (!r) return;
-    $("#rp-name").textContent = r.name;
-    const st = $("#rp-status");
-    st.className = "status-pill " + r.status;
-    st.textContent = r.status === "green" ? "OK" : r.status === "yellow" ? "WARN" : "CRIT";
-    $("#rp-count").textContent = `${r.devices.length} / 42U`;
-    $("#rp-power").textContent = r.power;
-    $("#rp-load").textContent = r.load;
-    $("#rp-temp").textContent = r.temp;
-    const pop = $("#rack-pop"); pop.hidden = false;
-    $("#rp-open").onclick = () => { openRack(rackId); $("#rack-pop").hidden = true; };
-    moveFloating(pop, ev.clientX + 18, ev.clientY + 18);
-  }
-  function moveFloating(node, x, y) {
-    const w = node.offsetWidth, h = node.offsetHeight;
-    const mx = Math.min(x, window.innerWidth - w - 12);
-    const my = Math.min(y, window.innerHeight - h - 12);
-    node.style.left = mx + "px";
-    node.style.top = my + "px";
-  }
-
-  function openRack(rackId) {
-    currentRackId = rackId;
-    const r = racks.find((x) => x.id === rackId);
-    currentDeviceId = r.devices[0]?.id;
-    $("#rack-select").value = rackId;
-    renderRackDetail();
-    showScreen("rack");
-  }
-
-  // ================= SCREEN 2: RACK DETAIL =================
-  function fillRackSelect() {
-    const sel = $("#rack-select");
-    sel.innerHTML = racks.map((r) => `<option value="${r.id}">${r.name}</option>`).join("");
-    sel.value = currentRackId;
-    sel.onchange = () => {
-      currentRackId = sel.value;
-      const r = racks.find((x) => x.id === currentRackId);
-      currentDeviceId = r.devices[0]?.id;
-      renderRackDetail();
-    };
-  }
-
-  function renderRackDetail() {
-    const r = racks.find((x) => x.id === currentRackId);
-    $("#rack-title").textContent = r.name;
-    $("#rack-u-count").textContent = r.uCount + "U";
-    $("#rack-power").textContent = r.power;
-    $("#rack-load").textContent = r.load;
-    $("#rack-temp").textContent = r.temp;
-
-    // u-ruler
-    const ruler = $("#u-ruler"); ruler.innerHTML = "";
-    for (let i = 1; i <= r.uCount; i++) {
-      ruler.appendChild(el("div", "u-num", String(i).padStart(2, "0")));
-    }
-    // u-slots: build 42 empty, then overlay devices
-    const slots = $("#u-slots"); slots.innerHTML = "";
-    const occupied = new Array(r.uCount + 1).fill(null);
-    r.devices.forEach((d) => {
-      for (let u = d.uStart; u < d.uStart + d.u; u++) occupied[u] = d;
-    });
-    for (let u = 1; u <= r.uCount; u++) {
-      const d = occupied[u];
-      if (!d) {
-        slots.appendChild(el("div", "u-slot empty"));
-      } else if (d.uStart === u) {
-        slots.appendChild(renderDeviceBlock(d));
-      }
-      // devices spanning multiple U — their rendered element has the correct height
-      else {
-        // skipped; represented by the tall block
-      }
-    }
-    // Device blocks click handling
-    $$("#u-slots .device-block").forEach((b) => {
-      b.addEventListener("click", () => {
-        currentDeviceId = b.dataset.id;
-        $$("#u-slots .device-block").forEach((x) => x.classList.toggle("selected", x.dataset.id === currentDeviceId));
-        renderDeviceInfo();
+      tile.addEventListener('mouseenter', e => showRackPop(e, r));
+      tile.addEventListener('mousemove', moveRackPop);
+      tile.addEventListener('mouseleave', hideRackPop);
+      tile.addEventListener('click', () => {
+        selectRack(r.id);
+        switchScreen('rack');
       });
-      if (b.dataset.id === currentDeviceId) b.classList.add("selected");
+      root.appendChild(tile);
     });
 
-    renderDeviceInfo();
+    const add = document.createElement('div');
+    add.className = 'rack-tile add';
+    add.textContent = '+ Добавить стойку';
+    add.addEventListener('click', openModal);
+    root.appendChild(add);
   }
 
-  function renderDeviceBlock(d) {
-    const b = el("div", `device-block status-${d.status}`);
-    b.style.setProperty("--u", d.u);
-    b.dataset.id = d.id;
-    const portsHtml = renderPortsInBlock(d);
-    b.innerHTML = `
-      <div class="db-head">
-        <span class="db-name">${d.name}</span>
-        <span class="db-u">U${String(d.uStart).padStart(2,"0")}${d.u>1?"–U"+String(d.uStart+d.u-1).padStart(2,"0"):""}</span>
-      </div>
-      <div class="db-body">${portsHtml}</div>
+  function miniRackContent() {
+    const layout = [
+      { kind:'router', label:'router' },
+      { kind:'switch', label:'switch' },
+      { kind:'server', label:'server' },
+      { kind:'server', label:'server' },
+      { kind:'empty',  label:'' },
+      { kind:'patch',  label:'patch' },
+      { kind:'empty',  label:'' },
+      { kind:'ups',    label:'ups' },
+    ];
+    return layout.map(u => `<div class="rack-mini-u ${u.kind}">${u.label}</div>`).join('');
+  }
+
+  const pop = $('#rack-pop');
+  function showRackPop(e, r) {
+    $('#rp-name').textContent = `${r.name} · ${r.id}`;
+    const sp = $('#rp-status');
+    sp.className = `status-pill ${r.status}`;
+    sp.textContent = r.status === 'ok' ? 'НОРМА' : r.status === 'warn' ? 'ПРЕДУПР.' : 'КРИТ.';
+    $('#rp-count').textContent = `${r.online}/${r.devices} · онлайн`;
+    $('#rp-power').textContent = r.power;
+    $('#rp-load').textContent  = `${r.load}%`;
+    $('#rp-temp').textContent  = r.temp;
+    $('#rp-open').onclick = () => { hideRackPop(); selectRack(r.id); switchScreen('rack'); };
+    pop.hidden = false;
+    moveRackPop(e);
+  }
+  function moveRackPop(e) {
+    if (pop.hidden) return;
+    const pad = 14;
+    let x = e.clientX + pad, y = e.clientY + pad;
+    const w = 240, h = pop.offsetHeight || 180;
+    if (x + w > window.innerWidth)  x = e.clientX - w - pad;
+    if (y + h > window.innerHeight) y = e.clientY - h - pad;
+    pop.style.left = x + 'px';
+    pop.style.top  = y + 'px';
+  }
+  function hideRackPop() { pop.hidden = true; }
+
+  // ============ Вид стойки ============
+  let currentRackId = 'R-02';
+  let selectedDeviceId = 'core-rtr-01';
+
+  function fillRackSelect() {
+    const sel = $('#rack-select');
+    sel.innerHTML = DATA.racks
+      .map(r => `<option value="${r.id}" ${r.id===currentRackId?'selected':''}>${r.name} · ${r.id}</option>`)
+      .join('');
+    sel.onchange = () => selectRack(sel.value);
+  }
+
+  function selectRack(id) {
+    currentRackId = id;
+    const rack = DATA.racks.find(r => r.id === id);
+    const det  = DATA.rackDetails[id] || DATA.rackDetails['R-02'];
+    $('#rack-title').textContent   = rack.name;
+    $('#rack-u-count').textContent = `${det.uHeight}U`;
+    $('#rack-power').textContent   = rack.power;
+    $('#rack-load').textContent    = `${rack.load}%`;
+    $('#rack-temp').textContent    = rack.temp;
+    fillRackSelect();
+    renderRackBody(det);
+    selectedDeviceId = det.devices[0] ? det.devices[0].id : null;
+    renderDevicePanel();
+  }
+
+  function renderRackBody(det) {
+    const ruler = $('#u-ruler');
+    const slots = $('#u-slots');
+    ruler.innerHTML = '';
+    slots.innerHTML = '';
+    for (let u = det.uHeight; u >= 1; u--) {
+      const m = document.createElement('div');
+      m.className = 'u-mark';
+      m.textContent = `U${u}`;
+      ruler.appendChild(m);
+      const s = document.createElement('div');
+      s.className = 'u-slot';
+      s.dataset.u = u;
+      slots.appendChild(s);
+    }
+    det.devices.forEach(dev => {
+      const topIdx = det.uHeight - (dev.u + dev.uSize - 1);
+      const topPx  = topIdx * 23;
+      const heightPx = dev.uSize * 22 + (dev.uSize - 1) * 1;
+      const el = document.createElement('div');
+      el.className = `device-block ${dev.kind}`;
+      if (dev.id === selectedDeviceId) el.classList.add('selected');
+      el.style.top = topPx + 'px';
+      el.style.height = heightPx + 'px';
+      el.dataset.id = dev.id;
+      el.innerHTML = deviceInnerHTML(dev);
+      el.addEventListener('click', () => {
+        selectedDeviceId = dev.id;
+        renderRackBody(det);
+        renderDevicePanel();
+      });
+      $$('.dev-port', el).forEach((pEl, idx) => {
+        const port = dev.ports[idx];
+        if (!port) return;
+        pEl.addEventListener('mouseenter', e => showPortTip(e, dev, port));
+        pEl.addEventListener('mousemove',  movePortTip);
+        pEl.addEventListener('mouseleave', hidePortTip);
+      });
+      slots.appendChild(el);
+    });
+  }
+
+  function deviceInnerHTML(d) {
+    let inner = `
+      <span class="dev-led ${d.status}"></span>
+      <span class="dev-name">${d.name}</span>
+      <span class="dev-model">· ${d.model}</span>
     `;
-    // port hover
-    b.querySelectorAll(".port,.pp").forEach((p) => {
-      const idx = +p.dataset.idx;
-      const port = d.ports[idx];
-      if (!port) return;
-      p.addEventListener("mouseenter", (ev) => showPortTip(ev, d, port));
-      p.addEventListener("mousemove", (ev) => moveFloating($("#port-tip"), ev.clientX + 18, ev.clientY + 18));
-      p.addEventListener("mouseleave", () => $("#port-tip").hidden = true);
-    });
-    return b;
-  }
-  function renderPortsInBlock(d) {
-    if (d.type === "router") {
-      return `<div class="ports-row">${d.ports.map((p,i) => `<span class="port ${p.status==='on'?'on':p.status==='err'?'err':''}" data-idx="${i}" title="${p.label}"></span>`).join("")}</div>`;
+    if (d.kind === 'switch') {
+      const ports = d.ports.slice(0, 24).map(p =>
+        `<span class="dev-port ${p.status}" title="Port ${p.n}"></span>`).join('');
+      inner += `<span class="dev-ports grid">${ports}</span>`;
+    } else if (d.kind === 'router') {
+      const ports = d.ports.slice(0, 10).map(p =>
+        `<span class="dev-port ${p.status}" title="Port ${p.n}"></span>`).join('');
+      inner += `<span class="dev-ports">${ports}</span>`;
+    } else if (d.kind === 'server') {
+      const disks = Array.from({length: 8}, (_, i) =>
+        `<span class="dev-disk ${d.status === 'err' && i === 2 ? 'err' : 'ok'}"></span>`).join('');
+      inner += `<span class="dev-disks">${disks}</span>`;
+    } else if (d.kind === 'patch') {
+      const ports = d.ports.slice(0, 24).map(p =>
+        `<span class="dev-port ${p.status}"></span>`).join('');
+      inner += `<span class="dev-ports">${ports}</span>`;
+    } else if (d.kind === 'ups') {
+      inner += `<span class="dev-ups-meter">
+        <b>${d.battery ?? 96}% батарея</b> · нагрузка ${d.loadPct ?? 42}%
+      </span>`;
     }
-    if (d.type === "switch") {
-      return `<div class="switch-grid">${d.ports.map((p,i) => `<span class="port ${p.status==='on'?'on':p.status==='err'?'err':''}" data-idx="${i}" title="${p.label}"></span>`).join("")}</div>`;
-    }
-    if (d.type === "patch") {
-      return `<div class="patch-ports">${d.ports.map((p,i) => `<span class="pp ${p.status==='on'?'on':''}" data-idx="${i}" title="${p.label}"></span>`).join("")}</div>`;
-    }
-    if (d.type === "server") {
-      const cpuCls = d.cpu>90?"err":d.cpu>75?"warn":"";
-      const ramCls = d.ram>90?"err":d.ram>80?"warn":"";
-      return `
-        <div class="server-view">
-          <span class="led ${d.status==='red'?'red':d.status==='yellow'?'yellow':''}"></span>
-          <div class="meter" title="CPU ${d.cpu}%"><div class="fill ${cpuCls}" style="width:${d.cpu}%"></div></div>
-          <div class="meter" title="RAM ${d.ram}%"><div class="fill ${ramCls}" style="width:${d.ram}%"></div></div>
-          <div class="disk-bays">${Array.from({length:8},(_,i)=>`<span class="disk-bay ${i<5?'on':''}"></span>`).join("")}</div>
-          <div class="ports-row">${d.ports.map((p,i) => `<span class="port ${p.status==='on'?'on':p.status==='err'?'err':''}" data-idx="${i}"></span>`).join("")}</div>
-        </div>
-      `;
-    }
-    if (d.type === "ups") {
-      return `
-        <div class="ups-view">
-          <span class="led"></span>
-          <div class="ups-batt"><div class="bf" style="width:${d.battery}%"></div></div>
-          <span>BAT ${d.battery}%</span>
-          <span>·</span>
-          <span>LOAD ${d.load}%</span>
-        </div>
-      `;
-    }
-    return "";
+    return inner;
   }
 
-  function showPortTip(ev, d, p) {
-    $("#pt-label").textContent = `${d.name} · ${p.label}`;
-    const s = $("#pt-status");
-    s.className = "pt-status status-pill " + (p.status==='err'?'red':p.status==='on'?'green':'yellow');
-    s.textContent = p.status==='err'?'ERR':p.status==='on'?'UP':'DOWN';
-    $("#pt-type").textContent = p.type;
-    $("#pt-ip").textContent = p.ip;
-    $("#pt-peer").textContent = p.peer;
-    $("#pt-cable").textContent = p.cable;
-    $("#pt-speed").textContent = p.speed;
-    $("#pt-vlan").textContent = p.vlan === "—" ? "—" : "VLAN " + p.vlan;
-    const tip = $("#port-tip"); tip.hidden = false;
-    moveFloating(tip, ev.clientX + 18, ev.clientY + 18);
-  }
-
-  // ---------- Device info (center) ----------
-  function renderDeviceInfo() {
-    const r = racks.find((x) => x.id === currentRackId);
-    const d = r.devices.find((x) => x.id === currentDeviceId);
+  function renderDevicePanel() {
+    const det = DATA.rackDetails[currentRackId] || DATA.rackDetails['R-02'];
+    const d = det.devices.find(x => x.id === selectedDeviceId) || det.devices[0];
     if (!d) return;
-    $("#d-name").textContent = d.name;
-    $("#d-sub").textContent = `${d.model} · ${typeLabel(d.type)}`;
-    const tags = $("#d-tags"); tags.innerHTML = "";
-    tags.appendChild(el("span", "status-pill " + d.status, d.status === "green" ? "В СЕТИ" : d.status === "yellow" ? "ПРЕДУПР." : "КРИТ."));
-    tags.appendChild(el("span", "status-pill", typeLabel(d.type).toUpperCase()));
 
-    $("#i-name").textContent = d.name;
-    $("#i-model").textContent = d.model;
-    $("#i-ip").textContent = d.ip;
-    $("#i-mac").textContent = d.mac;
-    $("#i-pos").textContent = `U${String(d.uStart).padStart(2,"0")}${d.u>1?"–U"+String(d.uStart+d.u-1).padStart(2,"0"):""} · ${d.u}U`;
-    $("#i-fw").textContent = d.firmware;
-    $("#i-sn").textContent = d.serial;
-    $("#i-seen").textContent = d.lastSeen;
-    $("#i-notes").value = d.notes || "";
+    $('#d-name').textContent = d.name;
+    $('#d-sub').textContent  = `${d.model} · ${DATA.racks.find(r=>r.id===currentRackId).name} · U${d.u}${d.uSize>1?`-U${d.u+d.uSize-1}`:''}`;
 
-    // ports table
-    const tb = $("#ports-tbody");
-    tb.innerHTML = d.ports.length ? d.ports.map((p) => `
+    const tags = $('#d-tags');
+    tags.innerHTML = '';
+    tags.appendChild(pill(d.status === 'ok' ? 'ok' : d.status,
+      d.status === 'ok' ? 'ONLINE' : d.status === 'warn' ? 'ПРЕДУПР.' : 'ОШИБКА'));
+    tags.appendChild(pill('', d.kind.toUpperCase()));
+
+    setText('i-name',  d.name);
+    setText('i-model', d.model);
+    setText('i-ip',    d.ip);
+    setText('i-mac',   d.mac);
+    setText('i-pos',   `${currentRackId} · U${d.u}${d.uSize>1?`-U${d.u+d.uSize-1}`:''}`);
+    setText('i-fw',    d.firmware || '—');
+    setText('i-sn',    d.sn || '—');
+    setText('i-seen',  d.seen || '—');
+
+    $('#i-notes').value = d.notes || '';
+
+    const tbody = $('#ports-tbody');
+    tbody.innerHTML = d.ports.map(p => `
       <tr>
-        <td class="mono">${p.label}</td>
+        <td class="mono">${p.n}</td>
         <td>${p.type}</td>
         <td class="mono">${p.ip}</td>
-        <td class="mono">${p.peer}</td>
+        <td>${p.peer}</td>
         <td>${p.cable}</td>
-        <td class="mono">${p.vlan === "—" ? "—" : p.vlan}</td>
-        <td><span class="st-dot ${p.status==='on'?'dot green':p.status==='err'?'dot red':'dot gray'}"></span>${p.status==='on'?'UP':p.status==='err'?'ERR':'DOWN'}</td>
-        <td><button class="link">Ред.</button></td>
+        <td class="mono">${p.vlan}</td>
+        <td>${portStatusPill(p.status)}</td>
+        <td><button class="link">✎</button></td>
       </tr>
-    `).join("") : `<tr><td colspan="8" class="muted" style="padding:14px">Нет портов у устройства этого типа.</td></tr>`;
+    `).join('');
 
-    renderLiveStats(d);
-  }
-  function typeLabel(t) {
-    return { server:"Сервер", switch:"Коммутатор", router:"Маршрутизатор", patch:"Патч-панель", ups:"ИБП" }[t] || t;
+    renderStatsPanel(d);
   }
 
-  // ---------- Live stats (right) ----------
-  let sparkPoints = [];
-  let statsTimer = null;
-  function renderLiveStats(d) {
-    const rc = $("#ring-cpu"), rr = $("#ring-ram");
-    const setRing = (ring, val) => {
-      ring.style.setProperty("--v", val);
-      ring.classList.remove("warn","err");
-      if (val > 90) ring.classList.add("err");
-      else if (val > 80) ring.classList.add("warn");
-    };
-    setRing(rc, d.cpu); $("#cpu-val").textContent = d.cpu;
-    setRing(rr, d.ram); $("#ram-val").textContent = d.ram;
-    $("#disk-fill").style.width = d.disk + "%";
-    $("#disk-val").textContent = d.disk;
-    $("#disk-used").textContent = d.diskUsed || "";
-    $("#ping-val").textContent = d.ping + " мс";
-    $("#up-val").textContent = d.uptime;
-
-    // spark
-    sparkPoints = Array.from({length:30}, () => d.cpu - 5 + Math.random()*10);
-    drawSpark();
-    clearInterval(statsTimer);
-    statsTimer = setInterval(() => {
-      const last = sparkPoints[sparkPoints.length-1] || d.cpu;
-      const next = Math.max(5, Math.min(99, last + (Math.random()-0.5)*8));
-      sparkPoints.push(next); sparkPoints.shift();
-      drawSpark();
-    }, 1200);
+  function portStatusPill(s) {
+    if (s === 'ok')    return `<span class="status-pill ok">UP</span>`;
+    if (s === 'warn')  return `<span class="status-pill warn">FLAP</span>`;
+    if (s === 'err')   return `<span class="status-pill err">DOWN</span>`;
+    if (s === 'empty') return `<span class="status-pill">—</span>`;
+    return `<span class="status-pill">${s}</span>`;
   }
-  function drawSpark() {
-    const svg = $("#spark");
-    if (!svg) return;
-    const w = 200, h = 50;
-    const min = 0, max = 100;
-    const pts = sparkPoints.map((v, i) => {
-      const x = (i / (sparkPoints.length - 1)) * w;
-      const y = h - ((v - min) / (max - min)) * h;
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
-    }).join(" ");
-    svg.innerHTML = `
-      <polyline fill="none" stroke="#3B82F6" stroke-width="1.5" points="${pts}"/>
-      <polyline fill="rgba(59,130,246,0.15)" stroke="none"
-        points="0,${h} ${pts} ${w},${h}"/>
+
+  function pill(kind, text) {
+    const el = document.createElement('span');
+    el.className = `status-pill ${kind}`;
+    el.textContent = text;
+    return el;
+  }
+  function setText(id, v) { const el = document.getElementById(id); if (el) el.textContent = v; }
+
+  $$('.device-tab').forEach(t => t.addEventListener('click', () => {
+    const tab = t.dataset.dtab;
+    $$('.device-tab').forEach(x => x.classList.toggle('active', x === t));
+    $$('.device-tab-body').forEach(b => b.classList.toggle('hidden', b.dataset.dtabBody !== tab));
+  }));
+
+  function renderStatsPanel(d) {
+    setRing('#ring-cpu', '#cpu-val', d.cpu);
+    setRing('#ring-ram', '#ram-val', d.ram);
+
+    const disk = d.disk ?? 0;
+    setText('disk-val', disk);
+    setText('disk-used', disk ? `${Math.round(disk * 9.6)} ГБ из 960` : '—');
+    const fill = $('#disk-fill');
+    fill.style.width = (disk || 0) + '%';
+    fill.className = 'disk-fill' + (disk >= 80 ? ' err' : disk >= 65 ? ' warn' : '');
+
+    setText('ping-val', typeof d.ping === 'number' ? `${d.ping} мс` : d.ping || '—');
+    setText('up-val',   d.uptime || '—');
+
+    drawSpark('#spark', 60, (d.cpu ?? 40));
+  }
+
+  function setRing(container, valueEl, pct) {
+    const el = $(container);
+    if (pct == null) {
+      el.innerHTML = `<svg viewBox="0 0 100 100"><circle class="ring-bg" cx="50" cy="50" r="42" stroke-width="8" fill="none"/></svg>
+      <div class="ring-lbl">—</div>`;
+      setText(valueEl.slice(1), '—');
+      return;
+    }
+    const r = 42, c = 2 * Math.PI * r;
+    const off = c * (1 - pct / 100);
+    const cls = pct >= 85 ? 'err' : pct >= 70 ? 'warn' : '';
+    el.innerHTML = `
+      <svg viewBox="0 0 100 100">
+        <circle class="ring-bg" cx="50" cy="50" r="${r}" stroke-width="8" fill="none"/>
+        <circle class="ring-fg ${cls}" cx="50" cy="50" r="${r}" stroke-width="8" fill="none"
+                stroke-dasharray="${c}" stroke-dashoffset="${off}" stroke-linecap="round"/>
+      </svg>
+      <div class="ring-lbl">${pct}%</div>
+    `;
+    setText(valueEl.slice(1), pct);
+  }
+
+  function drawSpark(selector, points, base) {
+    const svg = $(selector);
+    const W = 200, H = 50;
+    let pts = [];
+    let v = base;
+    for (let i = 0; i < points; i++) {
+      v += (Math.random() - .5) * 10;
+      v = Math.max(5, Math.min(98, v));
+      pts.push([i / (points - 1) * W, H - (v / 100) * (H - 6) - 3]);
+    }
+    const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+    const area = `M0 ${H} ` + pts.map(p => `L${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ') + ` L${W} ${H} Z`;
+    svg.innerHTML = `<path class="area" d="${area}"/><path class="line" d="${line}"/>`;
+  }
+
+  // ============ Тултип порта ============
+  const tip = $('#port-tip');
+  function showPortTip(e, dev, port) {
+    $('#pt-label').textContent = `${dev.name} · порт ${port.n}`;
+    const st = $('#pt-status');
+    st.className = `pt-status status-pill ${port.status === 'empty' ? '' : port.status}`;
+    st.textContent = port.status === 'ok' ? 'UP' : port.status === 'warn' ? 'FLAP' : port.status === 'err' ? 'DOWN' : '—';
+    setText('pt-type',  port.type);
+    setText('pt-ip',    port.ip);
+    setText('pt-peer',  port.peer);
+    setText('pt-cable', port.cable);
+    setText('pt-speed', port.speed);
+    setText('pt-vlan',  port.vlan);
+    tip.hidden = false;
+    movePortTip(e);
+  }
+  function movePortTip(e) {
+    if (tip.hidden) return;
+    const pad = 14;
+    let x = e.clientX + pad, y = e.clientY + pad;
+    const w = tip.offsetWidth || 260, h = tip.offsetHeight || 180;
+    if (x + w > window.innerWidth)  x = e.clientX - w - pad;
+    if (y + h > window.innerHeight) y = e.clientY - h - pad;
+    tip.style.left = x + 'px';
+    tip.style.top  = y + 'px';
+  }
+  function hidePortTip() { tip.hidden = true; }
+
+  // ============ Топология ============
+  let selectedNodeId = null;
+  const filters = { fiber: true, utp: true, cat5e: true };
+
+  $$('.topo-filters input').forEach(cb => cb.addEventListener('change', () => {
+    filters[cb.dataset.filter] = cb.checked;
+    renderTopology();
+  }));
+
+  function renderTopology() {
+    const svg = $('#topo');
+    const mini = $('#topo-mini');
+    const { nodes, edges } = DATA.topology;
+
+    const edgeSVG = edges.map(e => {
+      if (!filters[e.kind]) return '';
+      const a = nodes.find(n => n.id === e.a), b = nodes.find(n => n.id === e.b);
+      const dim = selectedNodeId && selectedNodeId !== e.a && selectedNodeId !== e.b ? ' dim' : '';
+      const x1 = a.x + 80, y1 = a.y + 24, x2 = b.x + 80, y2 = b.y + 24;
+      const midX = (x1 + x2) / 2, midY = (y1 + y2) / 2;
+      return `
+        <g>
+          <path class="topo-edge ${e.kind}${dim}"
+                d="M${x1} ${y1} C ${midX} ${y1}, ${midX} ${y2}, ${x2} ${y2}"
+                data-a="${e.a}" data-b="${e.b}" data-bw="${e.bw}" data-util="${e.util}"/>
+          <text class="edge-label" x="${midX}" y="${midY - 4}" text-anchor="middle">${e.bw} · ${e.util}%</text>
+        </g>
+      `;
+    }).join('');
+
+    const nodeSVG = nodes.map(n => {
+      const dim = selectedNodeId && !isConnected(n.id) ? ' dim' : '';
+      const sel = selectedNodeId === n.id ? ' selected' : '';
+      return `
+        <g class="topo-node${dim}${sel}" transform="translate(${n.x}, ${n.y})" data-id="${n.id}">
+          <rect class="node-bg" x="0" y="0" width="160" height="48"/>
+          <text class="title" x="12" y="20">${escapeHTML(n.label)}</text>
+          <text class="meta"  x="12" y="36">${escapeHTML(n.sub)}</text>
+          <circle class="st ${n.status}" cx="146" cy="14" r="4"/>
+        </g>
+      `;
+    }).join('');
+
+    svg.innerHTML = edgeSVG + nodeSVG;
+
+    $$('.topo-node', svg).forEach(g => g.addEventListener('click', () => {
+      selectedNodeId = selectedNodeId === g.dataset.id ? null : g.dataset.id;
+      renderTopology();
+    }));
+    $$('.topo-edge', svg).forEach(p => {
+      p.addEventListener('mouseenter', () => {
+        p.parentNode.querySelector('.edge-label').classList.add('show');
+      });
+      p.addEventListener('mouseleave', () => {
+        p.parentNode.querySelector('.edge-label').classList.remove('show');
+      });
+    });
+
+    mini.innerHTML = svg.innerHTML;
+
+    function isConnected(id) {
+      return id === selectedNodeId ||
+        edges.some(e => (e.a === selectedNodeId && e.b === id) ||
+                        (e.b === selectedNodeId && e.a === id));
+    }
+  }
+
+  let zoom = 1;
+  $('#topo-zoom-in').onclick  = () => { zoom = Math.min(1.6, zoom + .1); applyZoom(); };
+  $('#topo-zoom-out').onclick = () => { zoom = Math.max(0.6, zoom - .1); applyZoom(); };
+  $('#topo-reset').onclick    = () => { zoom = 1; selectedNodeId = null; applyZoom(); renderTopology(); };
+  function applyZoom() {
+    const svg = $('#topo');
+    svg.style.transform = `scale(${zoom})`;
+    svg.style.transformOrigin = 'center center';
+  }
+
+  // ============ Мониторинг ============
+  function renderMonitoring() {
+    const grid = $('#mon-grid');
+    grid.innerHTML = DATA.monitoring.map((m, i) => `
+      <div class="mon-card ${m.status}">
+        <div class="mon-head">
+          <b>${m.id}</b>
+          <span class="mloc">${m.loc}</span>
+        </div>
+        <div class="mon-rings">
+          <div class="ring" id="mr-cpu-${i}"></div>
+          <div class="ring" id="mr-ram-${i}"></div>
+        </div>
+        <div class="mon-row">
+          <div><span class="muted">Диск</span><br><b>${m.disk}%</b></div>
+          <div><span class="muted">Пинг</span><br><b>${m.ping} мс</b></div>
+          <div><span class="muted">Uptime</span><br><b>${m.uptime}</b></div>
+          <div><span class="muted">Статус</span><br><b>${m.status === 'ok' ? 'OK' : m.status === 'warn' ? 'WARN' : 'CRIT'}</b></div>
+        </div>
+        <svg class="spark" viewBox="0 0 200 32" preserveAspectRatio="none" id="mr-spark-${i}"></svg>
+      </div>
+    `).join('');
+
+    DATA.monitoring.forEach((m, i) => {
+      renderMiniRing(`#mr-cpu-${i}`, m.cpu, 'CPU');
+      renderMiniRing(`#mr-ram-${i}`, m.ram, 'RAM');
+      drawMiniSpark(`#mr-spark-${i}`, m.cpu);
+    });
+
+    const at = $('#alerts-tbody');
+    at.innerHTML = DATA.alertRules.map((r, i) => `
+      <tr>
+        <td>${r.name}</td>
+        <td class="mono">${r.cond}</td>
+        <td><span class="sev ${r.level === 'info' ? 'info' : r.level === 'warn' ? 'warn' : 'crit'}">${r.level.toUpperCase()}</span></td>
+        <td class="muted">${r.channel}</td>
+        <td><span class="toggle ${r.enabled ? 'on' : ''}" data-alert="${i}"></span></td>
+      </tr>
+    `).join('');
+    $$('.toggle', at).forEach(t => t.addEventListener('click', () => t.classList.toggle('on')));
+  }
+
+  function renderMiniRing(container, pct, lbl) {
+    const el = $(container);
+    if (!el) return;
+    const r = 22, c = 2 * Math.PI * r;
+    const off = c * (1 - (pct || 0) / 100);
+    const cls = pct >= 85 ? 'err' : pct >= 70 ? 'warn' : '';
+    el.innerHTML = `
+      <svg viewBox="0 0 54 54">
+        <circle class="ring-bg" cx="27" cy="27" r="${r}" stroke-width="5" fill="none"/>
+        <circle class="ring-fg ${cls}" cx="27" cy="27" r="${r}" stroke-width="5" fill="none"
+                stroke-dasharray="${c}" stroke-dashoffset="${off}" stroke-linecap="round"/>
+      </svg>
+      <div class="ring-lbl">${pct}<span style="font-size:8px;color:var(--mute);margin-left:1px">${lbl}</span></div>
     `;
   }
 
-  // Device tabs
-  $$(".device-tab").forEach((t) => {
-    t.addEventListener("click", () => {
-      $$(".device-tab").forEach((x) => x.classList.toggle("active", x === t));
-      $$(".device-tab-body").forEach((b) => b.classList.toggle("hidden", b.dataset.dtabBody !== t.dataset.dtab));
-    });
-  });
-
-  // ================= SCREEN 3: TOPOLOGY =================
-  function drawTopology() {
-    const svg = $("#topo");
-    const W = 1200, H = 700;
-    // gather nodes across racks
-    const allDevices = [];
-    racks.forEach((r, ri) => {
-      r.devices.forEach((d, di) => {
-        allDevices.push({ ...d, rackIdx: ri, rackName: r.name });
-      });
-    });
-    // positions: routers top, switches row 2, servers row 3+, ups/patch bottom
-    const groups = { router: [], switch: [], server: [], patch: [], ups: [] };
-    allDevices.forEach((d) => groups[d.type]?.push(d));
-    const cols = Math.max(1, racks.length);
-    const colW = W / cols;
-
-    const positions = {};
-    Object.entries(groups).forEach(([type, arr]) => {
-      const rows = { router: 90, switch: 210, server: 370, patch: 530, ups: 640 };
-      const y = rows[type] || 400;
-      // group by rack
-      racks.forEach((r, ri) => {
-        const inRack = arr.filter((d) => d.rackIdx === ri);
-        inRack.forEach((d, k) => {
-          const x = ri * colW + colW / 2 + (k - (inRack.length - 1)/2) * 80;
-          positions[d.id] = { x, y };
-        });
-      });
-    });
-
-    // edges: connect in each rack: router->switch, switch->server, switch->patch, ups to all in rack
-    const edges = [];
-    racks.forEach((r) => {
-      const routers = r.devices.filter((d) => d.type === "router");
-      const switches = r.devices.filter((d) => d.type === "switch");
-      const servers = r.devices.filter((d) => d.type === "server");
-      const patches = r.devices.filter((d) => d.type === "patch");
-      routers.forEach((rt) => switches.forEach((sw) => edges.push({ a: rt.id, b: sw.id, kind: "fiber" })));
-      switches.forEach((sw) => {
-        servers.forEach((sv) => edges.push({ a: sw.id, b: sv.id, kind: Math.random() > 0.5 ? "utp" : "cat5e" }));
-        patches.forEach((pp) => edges.push({ a: sw.id, b: pp.id, kind: "utp" }));
-      });
-    });
-    // cross-rack: connect core routers of rack01 to edge switches of racks 2..5 (fiber uplinks)
-    const coreRouter = racks[0].devices.find((d) => d.type === "router");
-    if (coreRouter) {
-      racks.slice(1).forEach((r) => {
-        const sw = r.devices.find((d) => d.type === "switch");
-        if (sw) edges.push({ a: coreRouter.id, b: sw.id, kind: "fiber" });
-      });
+  function drawMiniSpark(sel, base) {
+    const svg = $(sel);
+    if (!svg) return;
+    const W = 200, H = 32, pts = [];
+    let v = base;
+    for (let i = 0; i < 30; i++) {
+      v += (Math.random() - .5) * 12;
+      v = Math.max(5, Math.min(96, v));
+      pts.push([i / 29 * W, H - (v / 100) * (H - 4) - 2]);
     }
-
-    const icons = {
-      router: { bg: "#172342", accent: "#60a5fa", label: "RTR" },
-      switch: { bg: "#1a2535", accent: "#3B82F6", label: "SW" },
-      server: { bg: "#1c2330", accent: "#22C55E", label: "SRV" },
-      patch:  { bg: "#22252B", accent: "#9CA3AF", label: "PP" },
-      ups:    { bg: "#2b2618", accent: "#EAB308", label: "UPS" },
-    };
-
-    const edgesSvg = edges.map((e, i) => {
-      const a = positions[e.a], b = positions[e.b];
-      if (!a || !b) return "";
-      return `<line class="topo-edge ${e.kind}" data-a="${e.a}" data-b="${e.b}"
-        x1="${a.x}" y1="${a.y + 22}" x2="${b.x}" y2="${b.y - 22}">
-        <title>${e.kind.toUpperCase()} · ${Math.random() > 0.5 ? '1 Gb/s' : '10 Gb/s'}</title>
-      </line>`;
-    }).join("");
-
-    const nodesSvg = allDevices.map((d) => {
-      const p = positions[d.id]; if (!p) return "";
-      const ic = icons[d.type] || icons.switch;
-      const stColor = d.status === "red" ? "#EF4444" : d.status === "yellow" ? "#EAB308" : "#22C55E";
-      return `
-        <g class="topo-node" data-id="${d.id}" transform="translate(${p.x - 50}, ${p.y - 22})">
-          <rect width="100" height="44" rx="6" fill="${ic.bg}" stroke="${ic.accent}" stroke-width="1.2"/>
-          <circle cx="92" cy="8" r="3" fill="${stColor}"/>
-          <text x="10" y="18" font-weight="600">${d.name}</text>
-          <text class="sub" x="10" y="33">${ic.label} · ${d.rackName}</text>
-        </g>
-      `;
-    }).join("");
-
-    // rack backgrounds
-    const rackBgs = racks.map((r, ri) => {
-      const x = ri * colW + 10;
-      return `<g>
-        <rect x="${x}" y="40" width="${colW - 20}" height="${H - 80}" fill="rgba(255,255,255,0.015)" stroke="${"#30363D"}" stroke-dasharray="3,3" rx="6"/>
-        <text x="${x + 10}" y="32" fill="#8B949E" font-size="11" font-family="JetBrains Mono">${r.name}</text>
-      </g>`;
-    }).join("");
-
-    svg.innerHTML = rackBgs + edgesSvg + nodesSvg;
-
-    // filter behavior
-    $$(".topo-filters input").forEach((cb) => {
-      cb.onchange = () => {
-        const kind = cb.dataset.filter;
-        svg.querySelectorAll(`.topo-edge.${kind}`).forEach((e) => e.style.display = cb.checked ? "" : "none");
-      };
-    });
-
-    // node click → isolate
-    svg.querySelectorAll(".topo-node").forEach((n) => {
-      n.addEventListener("click", (ev) => {
-        ev.stopPropagation();
-        const id = n.dataset.id;
-        const connected = new Set([id]);
-        svg.querySelectorAll(".topo-edge").forEach((e) => {
-          if (e.dataset.a === id || e.dataset.b === id) {
-            connected.add(e.dataset.a); connected.add(e.dataset.b);
-            e.classList.remove("dim");
-          } else {
-            e.classList.add("dim");
-          }
-        });
-        svg.querySelectorAll(".topo-node").forEach((o) => {
-          o.classList.toggle("dim", !connected.has(o.dataset.id));
-        });
-      });
-    });
-    svg.addEventListener("click", () => {
-      svg.querySelectorAll(".topo-edge,.topo-node").forEach((e) => e.classList.remove("dim"));
-    });
-
-    // minimap
-    const mini = $("#topo-mini");
-    mini.innerHTML = svg.innerHTML;
-
-    // zoom
-    let scale = 1;
-    const apply = () => svg.style.transform = `scale(${scale})`;
-    $("#topo-zoom-in").onclick = () => { scale = Math.min(2, scale + 0.1); apply(); };
-    $("#topo-zoom-out").onclick = () => { scale = Math.max(0.5, scale - 0.1); apply(); };
-    $("#topo-reset").onclick = () => { scale = 1; apply(); };
+    const line = pts.map((p, i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+    svg.innerHTML = `<path fill="none" stroke="var(--accent)" stroke-width="1.3" d="${line}"/>`;
   }
 
-  // ================= SCREEN 4: MONITORING =================
-  function renderMonitoring() {
-    const grid = $("#mon-grid");
-    const all = [];
-    racks.forEach((r) => r.devices.forEach((d) => all.push({ ...d, rackName: r.name })));
-    const monitorable = all.filter((d) => d.type !== "patch");
-    grid.innerHTML = monitorable.map((d) => {
-      const cpuCls = d.cpu > 90 ? "err" : d.cpu > 80 ? "warn" : "";
-      const ramCls = d.ram > 90 ? "err" : d.ram > 80 ? "warn" : "";
-      return `
-        <div class="mon-card status-${d.status}">
-          <div class="mc-head">
-            <span class="mc-name">${d.name}</span>
-            <span class="mc-type">${typeLabel(d.type)} · ${d.rackName}</span>
-          </div>
-          <div class="mc-rings">
-            <div>
-              <div class="ring ${cpuCls}" style="--v:${d.cpu}"></div>
-              <div>ЦП ${d.cpu}%</div>
-            </div>
-            <div>
-              <div class="ring ${ramCls}" style="--v:${d.ram}"></div>
-              <div>ОЗУ ${d.ram}%</div>
-            </div>
-          </div>
-          <div class="mc-metrics">
-            <div class="row"><span class="muted">Диск</span><div class="mini-bar"><div class="fill" style="width:${d.disk}%"></div></div><strong>${d.disk}%</strong></div>
-            <div class="row"><span class="muted">Пинг</span><strong style="color:${d.ping < 5 ? 'var(--green)' : d.ping < 20 ? 'var(--yellow)' : 'var(--red)'}">${d.ping} мс</strong></div>
-            <div class="row"><span class="muted">Uptime</span><strong>${d.uptime}</strong></div>
-            <div class="mc-spark">${sparkSvg()}</div>
-          </div>
-          <div class="mc-foot">
-            <span>IP ${d.ip}</span>
-            <span>последн. ${d.lastSeen}</span>
-          </div>
-        </div>
-      `;
-    }).join("");
-
-    // alerts
-    const at = $("#alerts-tbody");
-    at.innerHTML = alerts.map((a, i) => `
-      <tr>
-        <td><strong>${a.name}</strong></td>
-        <td class="mono muted">${a.cond}</td>
-        <td><span class="sev ${a.level}">${a.level==='crit'?'КРИТ':a.level==='warn'?'ПРЕДУПР':'ИНФО'}</span></td>
-        <td>${a.channel}</td>
-        <td><span class="toggle ${a.on?'on':''}" data-idx="${i}"></span></td>
-      </tr>
-    `).join("");
-    at.querySelectorAll(".toggle").forEach((t) => {
-      t.addEventListener("click", () => t.classList.toggle("on"));
-    });
-  }
-  function sparkSvg() {
-    const pts = Array.from({length: 20}, () => 20 + Math.random()*40);
-    const w = 200, h = 28;
-    const path = pts.map((v,i) => `${(i/(pts.length-1))*w},${h - (v/100)*h}`).join(" ");
-    return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none">
-      <polyline fill="none" stroke="#3B82F6" stroke-width="1.5" points="${path}"/>
-    </svg>`;
-  }
-
-  // ================= SCREEN 6: EVENTS =================
+  // ============ Журнал событий ============
   function renderEvents() {
-    const tb = $("#events-tbody");
-    tb.innerHTML = events.map((e, i) => `
-      <tr class="event-row" data-idx="${i}">
-        <td class="mono">${e.ts}</td>
-        <td><span class="sev ${e.sev}">${e.sev==='crit'?'КРИТ':e.sev==='warn'?'ПРЕДУПР':'ИНФО'}</span></td>
-        <td class="mono">${e.device}</td>
-        <td>${e.rack}</td>
+    const tbody = $('#events-tbody');
+    tbody.innerHTML = '';
+    DATA.events.forEach((e, i) => {
+      const row = document.createElement('tr');
+      row.className = 'row';
+      row.innerHTML = `
+        <td class="ts">${e.ts}</td>
+        <td><span class="sev ${e.sev}">${sevText(e.sev)}</span></td>
+        <td>${e.device}</td>
+        <td class="mono">${e.rack}</td>
         <td>${e.desc}</td>
-        <td>${e.resolved ? '<span class="resolved-badge">Да</span>' : '<span class="muted">—</span>'}</td>
-      </tr>
-    `).join("");
-    tb.querySelectorAll(".event-row").forEach((row) => {
-      row.addEventListener("click", () => {
-        const idx = +row.dataset.idx;
-        const next = row.nextElementSibling;
-        if (next && next.classList.contains("expand")) { next.remove(); return; }
-        const e = events[idx];
-        const ex = el("tr", "expand");
-        ex.innerHTML = `<td colspan="6">› ${e.detail}</td>`;
-        row.after(ex);
-      });
+        <td>${e.resolved ? '<span class="resolved-pill yes">✓ решено</span>' : '<span class="resolved-pill no">— открыто</span>'}</td>
+      `;
+      const detail = document.createElement('tr');
+      detail.className = 'detail hidden';
+      detail.innerHTML = `<td colspan="6">
+        ${e.detail}
+        <pre>event.id=EV-${String(1000+i)} · rack=${e.rack} · device=${e.device} · severity=${e.sev} · ts=${e.ts}</pre>
+      </td>`;
+      row.addEventListener('click', () => detail.classList.toggle('hidden'));
+      tbody.appendChild(row);
+      tbody.appendChild(detail);
     });
   }
+  function sevText(s) {
+    return s === 'info' ? 'ИНФО' : s === 'warn' ? 'ПРЕДУПР.' : 'КРИТИЧНО';
+  }
 
-  // ================= MODAL =================
-  $("#btn-add-device").addEventListener("click", () => $("#modal").hidden = false);
-  $("#modal-close").addEventListener("click", () => $("#modal").hidden = true);
-  $("#modal-cancel").addEventListener("click", () => $("#modal").hidden = true);
-  $("#modal").addEventListener("click", (e) => { if (e.target.id === "modal") $("#modal").hidden = true; });
+  // ============ Модал ============
+  const modal = $('#modal');
+  function openModal()  { modal.hidden = false; }
+  function closeModal() { modal.hidden = true; }
+  $('#btn-add-device').addEventListener('click', openModal);
+  $('#modal-close').addEventListener('click', closeModal);
+  $('#modal-cancel').addEventListener('click', closeModal);
+  modal.addEventListener('click', e => { if (e.target === modal) closeModal(); });
 
-  // ================= INIT =================
+  function escapeHTML(s) {
+    return String(s).replace(/[&<>"']/g, c => ({
+      '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+    }[c]));
+  }
+
   renderFloorplan();
   fillRackSelect();
-  renderRackDetail();
+  selectRack(currentRackId);
+  renderMonitoring();
   renderEvents();
+  renderTopology();
 })();

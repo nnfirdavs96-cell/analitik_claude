@@ -1,162 +1,197 @@
-/* ==================== RackMap mock data ==================== */
-window.RACKMAP = (function () {
-  const mac = (p) => Array.from({length:6},()=>Math.floor(Math.random()*256).toString(16).padStart(2,"0").toUpperCase()).join(":");
-  const ip = (a,b,c,d) => `${a}.${b}.${c}.${d}`;
+// ============================================================
+// RackMap · моковые данные
+// ============================================================
+const DATA = {
+  // ------------------ Комната: 5 стоек ------------------
+  racks: [
+    { id: 'R-01', name: 'Rack 01', status: 'ok',   devices: 9,  online: 9,  power: '3.4/6.0 кВт', load: 57, temp: '22°C' },
+    { id: 'R-02', name: 'Rack 02', status: 'ok',   devices: 11, online: 11, power: '4.1/6.0 кВт', load: 68, temp: '23°C' },
+    { id: 'R-03', name: 'Rack 03', status: 'warn', devices: 8,  online: 7,  power: '5.2/6.0 кВт', load: 87, temp: '27°C' },
+    { id: 'R-04', name: 'Rack 04', status: 'err',  devices: 10, online: 8,  power: '2.9/6.0 кВт', load: 48, temp: '29°C' },
+    { id: 'R-05', name: 'Rack 05', status: 'ok',   devices: 9,  online: 9,  power: '3.8/6.0 кВт', load: 63, temp: '22°C' },
+  ],
 
-  // ======== Device factory ========
-  let idc = 0;
-  const dev = (o) => ({
-    id: "d"+(++idc),
-    status: "green",
-    firmware: "—",
-    serial: "SN-" + Math.random().toString(36).slice(2,10).toUpperCase(),
-    mac: mac(),
-    lastSeen: "2 сек. назад",
-    notes: "",
+  rackDetails: {
+    'R-01': {
+      uHeight: 42,
+      devices: [
+        stubDevice('rtr-branch-01', 'router', 'Mikrotik RB4011', '10.0.1.1', 1, 1, 'ok'),
+        stubDevice('sw-branch-01',  'switch', 'Cisco C9200-24T', '10.0.1.2', 3, 1, 'ok'),
+        stubDevice('srv-file-01',   'server', 'Dell R650',       '10.0.1.10', 5, 2, 'ok'),
+        stubDevice('srv-mail-01',   'server', 'Dell R650',       '10.0.1.11', 8, 2, 'ok'),
+        stubDevice('patch-01',      'patch',  'Legrand LCS3 24', '—',        11, 1, 'ok'),
+        stubDevice('ups-01',        'ups',    'APC SRT 3000',    '10.0.99.201', 40, 3, 'ok'),
+      ],
+    },
+
+    'R-02': {
+      uHeight: 42,
+      devices: [
+        richDevice({
+          id:'core-rtr-01', kind:'router', name:'core-rtr-01', model:'Mikrotik RB4011iGS+',
+          ip:'10.0.0.1', mac:'74:4D:28:A1:10:02', sn:'MTK-4011-192734',
+          u:1, uSize:1, firmware:'RouterOS 7.14.3', status:'ok',
+          cpu:38, ram:62, disk:14, ping:0.2, uptime:'64d 11h',
+          notes:'Основной граничный маршрутизатор. Uplink к Ростелекому на SFP+ 1, резерв на SFP+ 2.',
+          seen:'2026-04-19 16:42:03',
+          ports: [
+            { n:1, type:'SFP+', ip:'203.0.113.2/30',  peer:'ISP-Rostelecom',           cable:'LC-LC OS2', speed:'10G', vlan:'trunk', status:'ok' },
+            { n:2, type:'SFP+', ip:'198.51.100.2/30', peer:'ISP-ER-Telecom',           cable:'LC-LC OS2', speed:'10G', vlan:'trunk', status:'ok' },
+            { n:3, type:'RJ45', ip:'10.0.10.1/24',    peer:'dist-sw-01 / Gi1/0/1',     cable:'Cat6a',     speed:'1G',  vlan:'10',    status:'ok' },
+            { n:4, type:'RJ45', ip:'10.0.20.1/24',    peer:'dist-sw-02 / Gi1/0/1',     cable:'Cat6a',     speed:'1G',  vlan:'20',    status:'ok' },
+            { n:5, type:'RJ45', ip:'10.0.30.1/24',    peer:'srv-db-01',                cable:'Cat5e',     speed:'1G',  vlan:'30',    status:'warn' },
+            { n:6, type:'RJ45', ip:'—',               peer:'—',                        cable:'—',         speed:'—',   vlan:'—',     status:'empty' },
+            { n:7, type:'RJ45', ip:'—',               peer:'—',                        cable:'—',         speed:'—',   vlan:'—',     status:'empty' },
+            { n:8, type:'RJ45', ip:'10.0.99.1/24',    peer:'mgmt-sw / 24',             cable:'Cat6',      speed:'1G',  vlan:'99',    status:'ok' },
+            { n:9, type:'RJ45', ip:'—',               peer:'неизв.',                    cable:'—',         speed:'—',   vlan:'—',     status:'err' },
+            { n:10,type:'RJ45', ip:'—',               peer:'—',                        cable:'—',         speed:'—',   vlan:'—',     status:'empty' },
+          ],
+        }),
+        richDevice({
+          id:'dist-sw-01', kind:'switch', name:'dist-sw-01', model:'Cisco Catalyst 9300-24T',
+          ip:'10.0.10.2', mac:'00:1E:BE:44:AA:01', sn:'FCW2412L0M9',
+          u:3, uSize:1, firmware:'IOS-XE 17.9.4a', status:'ok',
+          cpu:24, ram:51, disk:22, ping:0.4, uptime:'128d 03h',
+          notes:'Распределительный коммутатор блока A. Стекирован с dist-sw-02 через 40G DAC.',
+          seen:'2026-04-19 16:42:01',
+          ports: Array.from({length:24}, (_,i) => ({
+            n:i+1, type:'RJ45',
+            ip: i < 20 ? `10.0.10.${i+10}` : '—',
+            peer: i < 20 ? `srv-app-${String(i+1).padStart(2,'0')}` : '—',
+            cable: i < 20 ? 'Cat6' : '—',
+            speed: i < 20 ? '1G' : '—',
+            vlan: i < 12 ? '10' : (i < 20 ? '40' : '—'),
+            status: i === 17 ? 'err' : (i < 20 ? 'ok' : 'empty'),
+          })),
+        }),
+        richDevice({
+          id:'srv-web-01', kind:'server', name:'srv-web-01', model:'Dell PowerEdge R650',
+          ip:'10.0.10.21', mac:'18:66:DA:C2:11:01', sn:'6HXQ8P3',
+          u:5, uSize:2, firmware:'BIOS 2.9.3 / iDRAC 5.10', status:'ok',
+          cpu:62, ram:74, disk:58, ping:0.3, uptime:'31d 07h',
+          notes:'Web-frontend nginx + keepalived. В паре с srv-web-02 (R-03/U-07).',
+          seen:'2026-04-19 16:42:07',
+          ports: [
+            { n:1, type:'RJ45',  ip:'10.0.10.21/24', peer:'dist-sw-01 / Gi1/0/11', cable:'Cat6',  speed:'1G',   vlan:'10', status:'ok' },
+            { n:2, type:'RJ45',  ip:'10.0.99.21/24', peer:'mgmt-sw / 8',           cable:'Cat6',  speed:'1G',   vlan:'99', status:'ok' },
+            { n:3, type:'IDRAC', ip:'10.0.99.121',   peer:'mgmt-sw / 18',          cable:'Cat5e', speed:'100M', vlan:'99', status:'ok' },
+          ],
+        }),
+        richDevice({
+          id:'srv-db-01', kind:'server', name:'srv-db-01', model:'Dell PowerEdge R740',
+          ip:'10.0.30.10', mac:'18:66:DA:C2:22:02', sn:'2K9L1M7',
+          u:8, uSize:2, firmware:'BIOS 2.14.1', status:'warn',
+          cpu:81, ram:88, disk:76, ping:0.5, uptime:'212d 02h',
+          notes:'PostgreSQL primary. Высокая нагрузка I/O. Проверить рейд BBU.',
+          seen:'2026-04-19 16:41:59',
+          ports: [
+            { n:1, type:'RJ45', ip:'10.0.30.10/24', peer:'core-rtr-01 / 5', cable:'Cat5e', speed:'1G', vlan:'30', status:'warn' },
+            { n:2, type:'RJ45', ip:'10.0.30.11/24', peer:'dist-sw-02 / 5',  cable:'Cat6',  speed:'1G', vlan:'30', status:'ok' },
+          ],
+        }),
+        richDevice({
+          id:'patch-panel-02', kind:'patch', name:'patch-panel-02', model:'Legrand LCS3 24-port',
+          ip:'—', mac:'—', sn:'PP-24-000232',
+          u:11, uSize:1, firmware:'—', status:'ok',
+          cpu:null, ram:null, disk:null, ping:'—', uptime:'—',
+          notes:'Патч-панель к офисным розеткам 1–24.',
+          seen:'—',
+          ports: Array.from({length:24}, (_,i) => ({
+            n:i+1, type:'Cat6', ip:'—', peer:`OFFICE-${String(i+1).padStart(2,'0')}`,
+            cable:'Cat6', speed:'—', vlan:'—',
+            status: i < 18 ? 'ok' : 'empty',
+          })),
+        }),
+        richDevice({
+          id:'ups-apc-01', kind:'ups', name:'ups-apc-01', model:'APC Smart-UPS SRT 5000',
+          ip:'10.0.99.200', mac:'00:C0:B7:99:01:02', sn:'AS1637121103',
+          u:40, uSize:3, firmware:'UPS 15.3', status:'ok',
+          cpu:null, ram:null, disk:null, ping:1.1, uptime:'340d',
+          battery:96, loadPct:42,
+          notes:'Заряд 96%. Автотест батарей — ежемесячно. Следующий: 28.04.2026.',
+          seen:'2026-04-19 16:42:00',
+          ports: [
+            { n:1, type:'RJ45', ip:'10.0.99.200', peer:'mgmt-sw / 24', cable:'Cat5e', speed:'100M', vlan:'99', status:'ok' },
+          ],
+        }),
+      ],
+    },
+  },
+
+  topology: {
+    nodes: [
+      { id:'isp',  label:'ISP',            sub:'Rostelecom · 10G',    kind:'router', x: 90,  y: 90,  status:'ok' },
+      { id:'core', label:'core-rtr-01',    sub:'MTK · 10.0.0.1',      kind:'router', x: 320, y: 120, status:'ok' },
+      { id:'fw',   label:'fw-edge-01',     sub:'FortiGate 60F',       kind:'router', x: 320, y: 300, status:'ok' },
+      { id:'sw1',  label:'dist-sw-01',     sub:'Cisco · 10.0.10.2',   kind:'switch', x: 600, y: 90,  status:'ok' },
+      { id:'sw2',  label:'dist-sw-02',     sub:'Cisco · 10.0.20.2',   kind:'switch', x: 600, y: 260, status:'ok' },
+      { id:'web',  label:'srv-web-01',     sub:'Dell · 10.0.10.21',   kind:'server', x: 900, y: 50,  status:'ok' },
+      { id:'web2', label:'srv-web-02',     sub:'Dell · 10.0.10.22',   kind:'server', x: 900, y: 160, status:'ok' },
+      { id:'db',   label:'srv-db-01',      sub:'Dell · 10.0.30.10',   kind:'server', x: 900, y: 300, status:'warn' },
+      { id:'sto',  label:'storage-01',     sub:'Synology RS3621',     kind:'server', x: 900, y: 440, status:'ok' },
+      { id:'pp',   label:'patch-panel-02', sub:'LCS3 · 24p',          kind:'panel',  x: 600, y: 450, status:'ok' },
+      { id:'mgmt', label:'mgmt-sw',        sub:'MTK · CRS328',        kind:'switch', x: 320, y: 480, status:'ok' },
+      { id:'ups',  label:'ups-apc-01',     sub:'APC SRT · 5kVA',      kind:'ups',    x: 320, y: 620, status:'ok' },
+    ],
+    edges: [
+      { a:'isp',  b:'core', kind:'fiber', bw:'10 Гбит/с', util:42 },
+      { a:'core', b:'fw',   kind:'fiber', bw:'10 Гбит/с', util:10 },
+      { a:'core', b:'sw1',  kind:'utp',   bw:'1 Гбит/с',  util:66 },
+      { a:'core', b:'sw2',  kind:'utp',   bw:'1 Гбит/с',  util:38 },
+      { a:'sw1',  b:'web',  kind:'utp',   bw:'1 Гбит/с',  util:54 },
+      { a:'sw1',  b:'web2', kind:'utp',   bw:'1 Гбит/с',  util:48 },
+      { a:'sw2',  b:'db',   kind:'cat5e', bw:'1 Гбит/с',  util:71 },
+      { a:'sw2',  b:'sto',  kind:'fiber', bw:'10 Гбит/с', util:22 },
+      { a:'sw1',  b:'pp',   kind:'utp',   bw:'1 Гбит/с',  util:12 },
+      { a:'mgmt', b:'ups',  kind:'utp',   bw:'100 Мбит/с',util: 4 },
+      { a:'mgmt', b:'core', kind:'utp',   bw:'1 Гбит/с',  util: 8 },
+    ],
+  },
+
+  monitoring: [
+    { id:'core-rtr-01', loc:'R-02 · U1',  cpu:38, ram:62, disk:14, ping:0.2, uptime:'64d',  status:'ok'   },
+    { id:'dist-sw-01',  loc:'R-02 · U3',  cpu:24, ram:51, disk:22, ping:0.4, uptime:'128d', status:'ok'   },
+    { id:'dist-sw-02',  loc:'R-03 · U3',  cpu:27, ram:49, disk:22, ping:0.5, uptime:'128d', status:'ok'   },
+    { id:'srv-web-01',  loc:'R-02 · U5',  cpu:62, ram:74, disk:58, ping:0.3, uptime:'31d',  status:'ok'   },
+    { id:'srv-web-02',  loc:'R-03 · U7',  cpu:58, ram:72, disk:60, ping:0.3, uptime:'30d',  status:'ok'   },
+    { id:'srv-db-01',   loc:'R-02 · U8',  cpu:81, ram:88, disk:76, ping:0.5, uptime:'212d', status:'warn' },
+    { id:'srv-app-12',  loc:'R-04 · U14', cpu:94, ram:91, disk:89, ping:18,  uptime:'4d',   status:'err'  },
+    { id:'storage-01',  loc:'R-05 · U20', cpu:12, ram:42, disk:63, ping:0.6, uptime:'540d', status:'ok'   },
+    { id:'ups-apc-01',  loc:'R-02 · U40', cpu: 0, ram: 0, disk: 0, ping:1.1, uptime:'340d', status:'ok'   },
+  ],
+
+  alertRules: [
+    { name:'Высокая нагрузка CPU', cond:'CPU > 85% на 5 мин', level:'warn', channel:'email, telegram', enabled:true  },
+    { name:'Дефицит памяти',       cond:'RAM > 90%',           level:'warn', channel:'telegram',        enabled:true  },
+    { name:'Диск близок к полному',cond:'Disk > 80%',          level:'warn', channel:'email',           enabled:true  },
+    { name:'Задержки сети',        cond:'Ping > 50 мс',        level:'info', channel:'telegram',        enabled:false },
+    { name:'Порт погас',           cond:'Link down',           level:'crit', channel:'email, slack',    enabled:true  },
+    { name:'ИБП на батарее',       cond:'onBattery = true',    level:'crit', channel:'email, sms',      enabled:true  },
+    { name:'Перегрев стойки',      cond:'T > 28°C',            level:'warn', channel:'email',           enabled:true  },
+  ],
+
+  events: [
+    { ts:'2026-04-19 16:41:22', sev:'crit', device:'srv-app-12',  rack:'R-04', desc:'Потеря связи — 3 таймаута пинга подряд', resolved:false, detail:'ping 10.0.40.12 timeout ×3. Последний ответ 16:40:58. MAC 18:66:DA:C2:44:0C. Инцидент INC-2026-0418.' },
+    { ts:'2026-04-19 16:38:05', sev:'warn', device:'srv-db-01',   rack:'R-02', desc:'CPU 81% > порог 80% в течение 5 минут',  resolved:false, detail:'Длительный autovacuum на events_partition_202604. Рекомендуется пересчёт статистики.' },
+    { ts:'2026-04-19 16:12:10', sev:'warn', device:'Rack 03',     rack:'R-03', desc:'Темп. 27.4°C приближается к порогу 28°C',resolved:false, detail:'Датчик T-03. Проверить перфорацию двери и заглушки.' },
+    { ts:'2026-04-19 15:47:00', sev:'info', device:'dist-sw-01',  rack:'R-02', desc:'Порт Gi1/0/18: admin shutdown',           resolved:true,  detail:'Исполнитель: a.ivanov. TKT-4412 — замена патч-корда.' },
+    { ts:'2026-04-19 14:55:31', sev:'info', device:'core-rtr-01', rack:'R-02', desc:'Конфиг: добавлен BGP neighbor 203.0.113.5', resolved:true, detail:'Резервный пир к ISP #2. RIB проверен.' },
+    { ts:'2026-04-19 10:02:17', sev:'warn', device:'ups-apc-01',  rack:'R-02', desc:'Самотест батареи — успех, ёмкость 94%',   resolved:true,  detail:'Плановый тест. Следующий 28.04.2026.' },
+    { ts:'2026-04-18 23:18:44', sev:'crit', device:'srv-web-02',  rack:'R-03', desc:'RAID degraded — диск 3 failed',           resolved:true,  detail:'Заменён ночной сменой. Rebuild 14h 22m, завершён 05:40.' },
+    { ts:'2026-04-18 12:03:00', sev:'info', device:'—',           rack:'—',   desc:'Плановый бэкап конфигураций — OK',        resolved:true,  detail:'12 конфигов, 4.2 МБ → s3://rackmap-backup/2026-04-18/' },
+  ],
+};
+
+function stubDevice(id, kind, model, ip, u, uSize, status) {
+  return richDevice({
+    id, name:id, kind, model, ip,
+    mac:'—', sn:'—', u, uSize, firmware:'—', status,
+    cpu: kind==='server' ? 40 : (kind==='router' || kind==='switch' ? 25 : null),
+    ram: kind==='server' ? 55 : (kind==='router' || kind==='switch' ? 40 : null),
+    disk:kind==='server' ? 45 : (kind==='router' || kind==='switch' ? 20 : null),
+    ping: 0.5, uptime:'—', notes:'',
+    seen:'2026-04-19 16:41:00',
     ports: [],
-    cpu: 20 + Math.floor(Math.random()*40),
-    ram: 30 + Math.floor(Math.random()*50),
-    disk: 40 + Math.floor(Math.random()*40),
-    diskUsed: "",
-    ping: 1 + Math.floor(Math.random()*6),
-    uptime: "34д 12ч",
-    ...o,
   });
-
-  const mkPorts = (count, kind, baseIp, peerName, cable="UTP Cat6", speed="1 Gb/s", vlan=10) => {
-    const arr = [];
-    for (let i=1;i<=count;i++){
-      const on = Math.random() > 0.3;
-      const err = on && Math.random() < 0.05;
-      arr.push({
-        label: kind === "sfp" ? `SFP${i}` : `${i}`,
-        type: kind === "sfp" ? "SFP+" : "RJ45",
-        ip: on ? (baseIp ? ip(baseIp[0], baseIp[1], baseIp[2], baseIp[3] + i) : "—") : "—",
-        peer: on ? `${peerName}-${String(i).padStart(2,"0")}` : "—",
-        cable,
-        speed: kind === "sfp" ? "10 Gb/s" : speed,
-        vlan: on ? (vlan + (i % 3) * 10) : "—",
-        status: err ? "err" : (on ? "on" : "off"),
-      });
-    }
-    return arr;
-  };
-
-  // ======== Rack 01 ========
-  const rack01Devices = [
-    dev({
-      name: "mt-core-01", model: "Mikrotik RB4011iGS+RM",
-      type: "router", u: 1, uStart: 42,
-      ip: "10.0.0.1", firmware: "RouterOS 7.11.2",
-      ports: mkPorts(10, "rj", [10,0,0,1], "port"),
-    }),
-    dev({
-      name: "sw-core-01", model: "Cisco Catalyst 2960X-24",
-      type: "switch", u: 1, uStart: 41,
-      ip: "10.0.0.2", firmware: "IOS 15.2(7)",
-      ports: (() => {
-        const a = mkPorts(24, "rj", [10,0,0,10], "core");
-        a.push(...mkPorts(2, "sfp", [10,0,0,40], "uplink", "Fiber LC", "10 Gb/s", 100));
-        return a;
-      })(),
-    }),
-    dev({
-      name: "pp-24-a", model: "Patch Panel 24-port Cat6",
-      type: "patch", u: 1, uStart: 40,
-      ip: "—", firmware: "—",
-      ports: mkPorts(24, "rj", null, "wall", "UTP Cat6", "—", 0),
-    }),
-    dev({
-      name: "srv-app-01", model: "Dell PowerEdge R740",
-      type: "server", u: 2, uStart: 36,
-      ip: "10.0.1.11", firmware: "BIOS 2.17.1",
-      cpu: 62, ram: 74, disk: 58, diskUsed: "2.9/5.0 TB",
-      ports: mkPorts(4, "rj", [10,0,1,11], "sw-core", "UTP Cat6", "1 Gb/s", 20),
-    }),
-    dev({
-      name: "srv-db-01", model: "Dell PowerEdge R750",
-      type: "server", u: 2, uStart: 34,
-      ip: "10.0.1.12", firmware: "BIOS 2.18.0",
-      cpu: 88, ram: 91, disk: 72, diskUsed: "3.6/5.0 TB",
-      status: "yellow",
-      ports: mkPorts(4, "rj", [10,0,1,12], "sw-core", "UTP Cat6", "1 Gb/s", 30),
-    }),
-    dev({
-      name: "srv-web-02", model: "Supermicro SYS-1029U",
-      type: "server", u: 1, uStart: 33,
-      ip: "10.0.1.14", firmware: "BIOS 1.4b",
-      cpu: 33, ram: 41, disk: 22, diskUsed: "0.6/3.0 TB",
-      ports: mkPorts(4, "rj", [10,0,1,14], "sw-core"),
-    }),
-    dev({
-      name: "srv-gpu-01", model: "Supermicro GPU 4124GS",
-      type: "server", u: 4, uStart: 29,
-      ip: "10.0.1.15", firmware: "BIOS 2.1",
-      cpu: 96, ram: 84, disk: 45,
-      status: "red",
-      ports: mkPorts(4, "rj", [10,0,1,15], "sw-core"),
-    }),
-    dev({
-      name: "ups-apc-01", model: "APC Smart-UPS RT 5000",
-      type: "ups", u: 3, uStart: 3,
-      ip: "10.0.0.99", firmware: "5.4.9", battery: 92, load: 38,
-      ports: [],
-    }),
-  ];
-
-  const racks = [
-    { id: "r01", name: "Rack 01", uCount: 42, x: 40, y: 40, status: "yellow", power: "5.2 кВт", load: "38%", temp: "24°C", devices: rack01Devices },
-    { id: "r02", name: "Rack 02", uCount: 42, x: 260, y: 40, status: "green", power: "4.7 кВт", load: "31%", temp: "23°C", devices: [] },
-    { id: "r03", name: "Rack 03", uCount: 42, x: 480, y: 40, status: "green", power: "5.1 кВт", load: "34%", temp: "24°C", devices: [] },
-    { id: "r04", name: "Rack 04", uCount: 42, x: 700, y: 40, status: "red",   power: "6.4 кВт", load: "58%", temp: "29°C", devices: [] },
-    { id: "r05", name: "Rack 05", uCount: 42, x: 920, y: 40, status: "green", power: "3.9 кВт", load: "24%", temp: "22°C", devices: [] },
-  ];
-
-  // Fill racks 2-5 procedurally
-  [racks[1], racks[2], racks[3], racks[4]].forEach((r, idx) => {
-    r.devices = [
-      dev({ name:`sw-${r.id}`, model:"Cisco Catalyst 2960X", type:"switch", u:1, uStart:42,
-        ip:`10.0.${idx+2}.2`, firmware:"IOS 15.2(7)",
-        ports: mkPorts(24,"rj",[10,0,idx+2,10],"edge") }),
-      dev({ name:`pp-${r.id}`, model:"Patch Panel 24", type:"patch", u:1, uStart:41, ip:"—",
-        ports: mkPorts(24,"rj",null,"wall","UTP Cat6","—",0) }),
-      dev({ name:`srv-${r.id}-01`, model:"Dell PowerEdge R740", type:"server", u:2, uStart:37,
-        ip:`10.0.${idx+2}.11`, firmware:"BIOS 2.17.1",
-        cpu: 40+idx*10, ram: 50+idx*8, disk: 30+idx*10,
-        status: idx === 2 ? "red" : "green",
-        ports: mkPorts(4,"rj",[10,0,idx+2,11],"edge") }),
-      dev({ name:`srv-${r.id}-02`, model:"Supermicro SYS-1029U", type:"server", u:1, uStart:36,
-        ip:`10.0.${idx+2}.12`, firmware:"BIOS 1.4b",
-        cpu: 22, ram: 38, disk: 18,
-        ports: mkPorts(4,"rj",[10,0,idx+2,12],"edge") }),
-      dev({ name:`ups-${r.id}`, model:"APC Smart-UPS RT 3000", type:"ups", u:2, uStart:3,
-        ip:`10.0.${idx+2}.99`, battery: 80+idx, load: 25+idx*5, ports: [] }),
-    ];
-  });
-
-  // Events
-  const events = [
-    { ts:"2026-04-19 14:02:31", sev:"crit", device:"srv-gpu-01", rack:"Rack 01", desc:"Температура CPU 94°C — превышен критический порог", resolved:false, detail:"CPU0 temp spike at 14:02:29. Fan speed: 100%. Consider workload migration." },
-    { ts:"2026-04-19 13:58:10", sev:"warn", device:"srv-db-01",  rack:"Rack 01", desc:"Использование памяти 91% — приближается к лимиту", resolved:false, detail:"RSS 91.4GB of 100GB. PG autovacuum running." },
-    { ts:"2026-04-19 13:44:02", sev:"warn", device:"sw-core-01", rack:"Rack 01", desc:"Порт Gi0/12: рост ошибок CRC (22/мин)", resolved:false, detail:"CRC errors rising since 13:38. Possible faulty cable." },
-    { ts:"2026-04-19 13:30:47", sev:"info", device:"mt-core-01", rack:"Rack 01", desc:"BGP peer 185.xx.xx.xx восстановлен", resolved:true, detail:"Session re-established after 12s downtime." },
-    { ts:"2026-04-19 12:51:13", sev:"crit", device:"srv-r04-01", rack:"Rack 04", desc:"Диск sda: предсказание сбоя SMART", resolved:false, detail:"SMART attribute 5 (Reallocated_Sector_Ct) = 134, rising." },
-    { ts:"2026-04-19 12:14:08", sev:"info", device:"ups-apc-01", rack:"Rack 01", desc:"Самотестирование пройдено", resolved:true, detail:"Last self-test OK. Battery runtime: 18m @ current load." },
-    { ts:"2026-04-19 11:03:22", sev:"info", device:"sw-r02",     rack:"Rack 02", desc:"Новое устройство обнаружено: Gi0/4 → 10.0.2.14", resolved:true, detail:"LLDP discovered srv-r02-03." },
-    { ts:"2026-04-19 10:44:02", sev:"warn", device:"srv-app-01", rack:"Rack 01", desc:"Задержка диска > 80мс на /dev/sdb", resolved:true, detail:"Await avg 92ms for 3 minutes. Recovered." },
-    { ts:"2026-04-19 09:21:11", sev:"info", device:"mt-core-01", rack:"Rack 01", desc:"Конфигурация изменена: user admin", resolved:true, detail:"Change: /ip firewall filter add ..." },
-    { ts:"2026-04-19 08:02:55", sev:"info", device:"sw-r03",     rack:"Rack 03", desc:"Обновление прошивки успешно", resolved:true, detail:"IOS 15.2(7)E3 → 15.2(7)E4" },
-  ];
-
-  const alerts = [
-    { name: "CPU > 90%", cond: "load_avg > 90 за 2 мин", level: "warn", channel: "Telegram", on: true },
-    { name: "RAM > 85%", cond: "used_mem > 85% за 5 мин", level: "warn", channel: "Email", on: true },
-    { name: "Диск > 80%", cond: "fs_used > 80%", level: "warn", channel: "Telegram", on: true },
-    { name: "Температура CPU > 85°C", cond: "temp > 85 сразу", level: "crit", channel: "SMS + Telegram", on: true },
-    { name: "Пинг потерян", cond: "icmp loss > 50% за 1 мин", level: "crit", channel: "SMS", on: true },
-    { name: "Порт down", cond: "ifOperStatus = down", level: "info", channel: "Email", on: false },
-    { name: "Ошибки CRC", cond: "crc_errors > 10/мин", level: "warn", channel: "Telegram", on: true },
-  ];
-
-  return { racks, events, alerts };
-})();
+}
+function richDevice(o) { return o; }
